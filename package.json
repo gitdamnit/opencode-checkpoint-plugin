@@ -1,0 +1,32 @@
+{
+  "name": "@gitdamnit/checkpoint-orchestrator",
+  "version": "0.1.2",
+  "description": "Checkpoint Orchestrator plugin for OpenCode",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gitdamnit/opencode-checkpoint-plugin.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.14.19"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  },
+  "main": "dist/checkpoint-orchestrator.js",
+  "files": [
+    "dist",
+    "README.md",
+    "gitdamnit.png"
+  ],
+  "scripts": {
+    "build:checkpoint": "if not exist dist mkdir dist && copy /Y plugins\\\\checkpoint-orchestrator.ts dist\\\\checkpoint-orchestrator.js",
+    "prepack": "npm run build:checkpoint",
+    "test:checkpoint-smoke": "node tests/checkpoint_smoke.js",
+    "test:checkpoint_json_smoke": "node tests/checkpoint_json_smoke.js",
+    "test:checkpoint_atomic_smoke": "node tests/checkpoint_atomic_smoke.js",
+    "test:all": "npm run test:checkpoint-smoke && npm run test:checkpoint_json_smoke && npm run test:checkpoint_atomic_smoke",
+    "test": "npm run test:all"
+  },
+  "author": "Evan Zellner <evanzellner@outlook.com>"
+}
