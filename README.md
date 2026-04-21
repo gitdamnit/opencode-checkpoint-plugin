@@ -1,4 +1,4 @@
-![gitdamnit](gitdamnit.png)
+![gitdamnit]()
 # @gitdamnit/checkpoint-orchestrator
 
 A minimal OpenCode plugin that provides persistent task checkpointing.
