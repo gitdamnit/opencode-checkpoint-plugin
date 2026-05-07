@@ -1,9 +1,10 @@
 ![gitdamnit](gitdamnit.png)
+
 # @gitdamnit/checkpoint-orchestrator
 
-A minimal OpenCode plugin that provides persistent task checkpointing.
+Failure-resilient checkpointing for OpenCode — persistent task state, atomic writes, and resumable AI workflows.
 
-This plugin allows AI workflows to save, load, and clear state deterministically, enabling resumable processes rather than fragile sessions.
+Prevents context loss when switching models or providers during a session. The next model picks up exactly where the last one left off.
 
 ## Install
 
@@ -11,25 +12,37 @@ This plugin allows AI workflows to save, load, and clear state deterministically
 npm install @gitdamnit/checkpoint-orchestrator
 ```
 
-## Usage
+Then register in your OpenCode config:
 
-```typescript
-import { CheckpointPlugin } from "@gitdamnit/checkpoint-orchestrator";
+```json
+{
+  "plugin": ["@gitdamnit/checkpoint-orchestrator"]
+}
+```
 
-// Register with your OpenCode setup
+Or via CLI:
+
+```bash
+opencode plugin @gitdamnit/checkpoint-orchestrator
 ```
 
 ## Tools Provided
 
-The plugin provides the following tools for the LLM:
+| Tool | Description |
+|------|-------------|
+| `checkpoint_save` | Save task state — deep-merges fields so partial updates never clobber. Accepts title, objective, status, summary, currentPlan, completedSteps, nextSteps, blockers, filesTouched, notes. |
+| `checkpoint_load` | Load full current checkpoint state. |
+| `checkpoint_status` | Quick status summary — exists, updatedAt, title, status, step counts, blockers count. |
+| `checkpoint_clear` | Delete the checkpoint file entirely. |
+| `checkpoint_list` | Inspect current state (single-state; multi-checkpoint history planned). |
 
-- `checkpoint_save`: Saves task state (accepts title, summary, and status).
-- `checkpoint_load`: Loads current task state.
-- `checkpoint_clear`: Clears checkpoint state.
-- `checkpoint_list`: Inspects and returns current checkpoint state (currently does not list multiple checkpoints, just the current one).
+## Automatic Context Injection
+
+On session compacting, the plugin automatically injects the checkpoint state into the LLM's context with instructions to continue from where it left off. Deduplication prevents re-injecting unchanged state.
 
 ## Architecture & Storage
 
-- **Storage Location:** State is saved to `.opencode/state/checkpoint.json`.
-- **Atomic Writes:** All writes use a temp-file plus rename mechanism to ensure atomic updates and prevent corrupted states during crashes.
-- **Merge Behavior:** Saving performs a shallow merge of the top-level state and a deep merge of the nested `task` field to avoid overwriting existing task objectives or context.
+- **Storage Location:** `.opencode/state/checkpoint.json`
+- **Atomic Writes:** Writes to a temp file first, then renames to final path — prevents corruption on crash or power loss.
+- **Deep Merge:** Saving merges `task` fields individually rather than overwriting. You can save `title` in one call and `status` in another without losing data.
+- **Deduplication:** The session compacting hook tracks state hashes to avoid injecting the same context multiple times.
