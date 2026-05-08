@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.3.1] — 2026-05-08
+
+### Changed
+- Replaced `gitdamnit.png` with `gitdamnit.jpg` — compressed image from 3.5 MB to 250 KB to drastically reduce package size.
+
+## [0.3.0] — 2026-05-08
+
+### Added
+- **Three-trigger automatic persistence:** Plugin no longer relies on agent initiative to save state.
+  - Trigger A (`session.compacted`): Re-saves existing state or synthesizes a minimal checkpoint if none exists. Covers context-window-blowout scenarios.
+  - Trigger B (`chat.message` every 5 messages): Re-saves existing state if dirty. Covers long-running sessions that crash before compaction. Does NOT synthesize — synthesis is Trigger A only.
+  - Trigger C: Existing explicit `checkpoint_save` tool call (unchanged). Primary save path.
+- **`handoff.md` generation:** Every write to `checkpoint.json` now also generates `.opencode/state/handoff.md` in human-readable markdown. Compatible with aider, Claude Code, Codex CLI, or any tool that can read a file.
+- **Ring buffer snapshot history:** `.opencode/state/checkpoint-history.json` stores the last 10 snapshots (configurable via `MAX_HISTORY`). Every save appends to history; oldest entries are pruned automatically.
+- **`checkpoint_list`** (replaced dead duplicate): Now lists snapshot history newest-first with name, savedAt, title, and status.
+- **`checkpoint_load_snapshot`**: Read-only inspection of any named snapshot.
+- **`checkpoint_restore_snapshot`**: Promotes a named snapshot to live state. Automatically saves current live state as `pre-restore-{timestamp}` before overwriting — one-step undo.
+- **Schema versioning:** `SCHEMA_VERSION = 2` constant. Version mismatch logs a warning but does not block loading.
+- **Named snapshots:** `checkpoint_save` accepts optional `snapshotName` argument to tag a snapshot for later reference.
+
+### Changed
+- `checkpoint_list` — was a dead duplicate of `checkpoint_load`. Now shows ring buffer history.
+- `checkpoint_save` — new optional `snapshotName` parameter.
+- Schema `version` field bumped from `1` to `2`.
+
+### Fixed
+- Silent data loss when agent context exhausted before manual `checkpoint_save` call.
+- Silent data loss when agent works for extended periods without saving between compactions.
+
 ## 0.2.0 (2026-05-07)
 
 ### Fixed
