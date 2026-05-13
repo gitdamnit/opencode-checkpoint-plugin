@@ -1,6 +1,6 @@
 {
   "name": "@gitdamnit/checkpoint-orchestrator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Failure-resilient checkpointing for OpenCode — persistent task state, atomic writes, and resumable AI workflows",
   "repository": {
     "type": "git",
