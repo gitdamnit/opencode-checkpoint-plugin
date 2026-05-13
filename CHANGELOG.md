@@ -1,15 +1,16 @@
 # Changelog
 
-## [0.4.0] — 2026-05-13
+## [1.0.0] — 2026-05-13
 
 ### Added
-- **Hardening test suite** (`tests/checkpoint_hardening.js`): 77 new tests covering security, fuzz, atomic integrity, stress, and edge cases. Total test count: 162.
-- **Input size limit constants:** `MAX_STRING_LENGTH` (50KB), `MAX_ARRAY_ITEMS` (1000), `MAX_SANITIZED_LENGTH` (10KB).
-- **Clamp helpers:** `clampString`, `clampArray` — enforce input size limits in `checkpoint_save` execute path.
-- **Markdown sanitization:** `sanitizeForMarkdown`, `sanitizeArrayForMarkdown` — escapes `<` and `>` in handoff output.
+- **Comprehensive test suite** (`tests/checkpoint_comprehensive.js`): 817 tests across 15 sections — property-based fuzz (100 iterations), filesystem lifecycle, recovery & resilience, atomic write verification, ring buffer boundary, deep merge combinatorial, sanitization, clamp boundary, schema versioning, timestamp format, stress (1000 merges + 200 file saves), extended security vectors, snapshot operations, handoff output structure, and checkpoint clear. Total test count: 979.
+- **Hardening test suite** (`tests/checkpoint_hardening.js`): 77 tests covering security, fuzz, atomic integrity, stress, and edge cases.
+- **GitHub Actions CI:** Runs lint, build, and 979 tests on Node 18/20/22.
 - **ESLint config:** Flat config with TypeScript support.
 - **TypeScript config:** `tsconfig.json` — build via `tsc` instead of raw `cpSync`.
-- **GitHub Actions CI:** Runs lint, build, and 162 tests on Node 18/20/22.
+- **Input size limit constants:** `MAX_STRING_LENGTH` (50KB), `MAX_ARRAY_ITEMS` (1000), `MAX_SANITIZED_LENGTH` (10KB).
+- **Clamp helpers:** `clampString`, `clampArray` — enforce input size limits in `checkpoint_save` execute path.
+- **Markdown sanitization:** `sanitizeForMarkdown`, `sanitizeArrayForMarkdown` — escapes `<`, `>`, and `"` in handoff output.
 
 ### Changed
 - Build pipeline: replaced `fs.cpSync` with proper `tsc` compilation.
@@ -17,7 +18,8 @@
 - `handoff.md` writing is now atomic — writes to temp file then renames into place.
 - `checkpoint_clear` now deletes all three state files: `checkpoint.json`, `handoff.md`, `checkpoint-history.json`.
 - Auto-save event handlers (`session.compacted`, `chat.message`) wrapped in `try/catch` — failures log but do not crash the plugin.
-- Test script runs both smoke (85) and hardening (77) suites.
+- Test script runs all three suites: smoke (85), hardening (77), and comprehensive (817).
+- Version bumped to 1.0.0 — feature-complete, production-mature, with 979 tests, CI/CD, and full TypeScript build pipeline.
 
 ### Fixed
 - TOCTOU race in `checkpoint_restore_snapshot` — snapshot restore now uses a single history read.
@@ -25,8 +27,8 @@
 
 ### Security
 - Input clamping on all `checkpoint_save` string and array parameters.
-- Markdown escaping in all handoff output fields.
-- Prototype pollution resistance verified in test suite.
+- Markdown escaping (`<`, `>`, `"`) in all handoff output fields.
+- Prototype pollution resistance verified across 4 attack variants.
 
 ## [0.3.1] — 2026-05-08
 

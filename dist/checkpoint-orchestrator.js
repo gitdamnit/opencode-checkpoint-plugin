@@ -116,7 +116,7 @@ function deepMerge(existing, incoming) {
 function sanitizeForMarkdown(s) {
     if (typeof s !== "string")
         return "";
-    return s.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return s.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function sanitizeArrayForMarkdown(arr) {
     if (!arr)

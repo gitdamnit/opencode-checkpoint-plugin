@@ -166,7 +166,7 @@ function deepMerge(
 
 function sanitizeForMarkdown(s: string | undefined | null): string {
   if (typeof s !== "string") return ""
-  return s.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  return s.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
 function sanitizeArrayForMarkdown(arr: string[] | undefined | null): string[] {
