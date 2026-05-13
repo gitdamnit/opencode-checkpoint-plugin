@@ -61,14 +61,43 @@ On session compacting, the plugin automatically injects the checkpoint state int
 
 ## Test Suite
 
-| Suite | Tests | Result | Coverage |
-|-------|-------|--------|----------|
-| `checkpoint_smoke.js` | 85 | `85 passed, 0 failed` | Core functionality: fresh saves, deep merge, partial updates, status progression, atomic writes, handoff generation, ring buffer, snapshot ops, auto-save counter |
-| `checkpoint_hardening.js` | 77 | `77 passed, 0 failed` | Security: prototype pollution, Markdown injection, XSS vectors. Fuzz: type coercion, null/undefined handling. Stress: 100 merges, ring buffer limits. Edge cases: status transitions, empty states, TOCTOU, schema versions |
-| `checkpoint_comprehensive.js` | 817 | `817 passed, 0 failed` | Property-based fuzz (100 iterations), filesystem lifecycle, recovery & resilience, atomic verification, ring buffer boundaries, deep merge combinatorial (all field types, empty strings, null, chaining), sanitization (special chars, unicode, handoff context), clamp boundaries, schema versioning, timestamp ISO format, stress (1000 merges + 200 file saves), security (4 prototype pollution variants, DoS, injection across all contexts), snapshot find/undo, handoff output structure, checkpoint clear |
-| **Total** | **979** | **All passing** | |
+All 979 tests pass on Node.js 18, 20, and 22 in CI.
 
-All tests run in CI on Node.js 18, 20, and 22.
+### `tests/checkpoint_smoke.js` — 85 tests, 0 failed
+
+Core save/load lifecycle, deep merge, partial updates, status progression, atomic write integrity, handoff generation, ring buffer pruning, snapshot naming, and auto-save counter threshold/reset.
+
+### `tests/checkpoint_hardening.js` — 77 tests, 0 failed
+
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| Security | 4 | Prototype pollution via `__proto__`, `constructor.prototype`, nested `__proto__`, and array payloads |
+| Markdown injection | 5 | Script tags, code fences, image/link syntax all escaped |
+| Fuzz | 8 | String/number/boolean/array/null/undefined incoming types |
+| Stress | 9 | 100 rapid merges, ring buffer at limits, all-fields-max payload |
+| Edge cases | 11 | Double merges, all 4 status transitions, empty state, special chars, multiline, TOCTOU, missing version, missing directory |
+| Atomic integrity | 4 | Temp file uniqueness, valid output, partial crash recovery |
+| Handoff | 30 | All field fallbacks, nullish input, version checks, emoji prefixes, long content |
+
+### `tests/checkpoint_comprehensive.js` — 817 tests, 0 failed
+
+| Section | Tests | Coverage |
+|---------|-------|----------|
+| Part 1 — Property Fuzz | ~600 (100 iters × 6 asserts) | Random titles, statuses, summaries, plans — verifies deep merge stability under random input combinations |
+| Part 2 — Filesystem Lifecycle | 13 | Full create → save → load → handoff → clear cycle across 5 sequential saves |
+| Part 3 — Recovery & Resilience | 11 | Corrupted JSON, corrupted history, missing directory with auto-mkdir, empty state file, missing handoff regeneration, mid-write crash survival |
+| Part 4 — Atomic Write Verification | 5 | 50 rapid temp-file writes with unique naming, zero leftover temp files, large payload (10KB fields, 500-item arrays) data completeness |
+| Part 5 — Ring Buffer History | 19 | Exact boundary (10 entries), overflow pruning, empty/single edge cases, named vs auto snapshots, newest-first ordering |
+| Part 6 — Deep Merge Combinatorial | 32 | All 16 status transitions, all 10 field types, partial field preservation, empty strings, null values, 3-step chained merges |
+| Part 7 — Sanitization | 21 | 6 XSS vectors (script, img, anchor, angle brackets, quotes), undefined/null/number/non-angle inputs, array sanitization, unicode (7 languages/charsets), full handoff injection context |
+| Part 8 — Clamp Boundaries | 20 | String input: undefined/null/number/empty/exact/+1/way-over/max/max+1. Array: undefined/null/not-array/empty/exact/+1/way-over/max/max+1 |
+| Part 9 — Schema Versioning | 13 | Current version detection, v1 migration, v0 handling, missing version field, forward compatibility |
+| Part 10 — Timestamp & Format | 6 | ISO 8601 format, Z/offset suffix, valid Date parsing, recency (within 5s), not in future |
+| Part 11 — Stress | 10 | 1000 rapid deep merges with title/step/note accumulation, 200 file saves with ring buffer verification, zero temp file leaks |
+| Part 12 — Security | 8 | 4 prototype pollution variants (`__proto__`, `constructor.prototype`, nested, array), 100K-element DoS, deeply nested payloads, injection in all handoff contexts |
+| Part 13 — Snapshot Operations | 5 | Find by name, unknown name, pre-restore undo point creation |
+| Part 14 — Handoff Structure | 30 | All 10 markdown sections present, correct numbering/counts, 10 empty-field fallback strings |
+| Part 15 — Checkpoint Clear | 5 | All 3 files deleted, graceful handling when no files exist |
 
 ## Architecture & Storage
 

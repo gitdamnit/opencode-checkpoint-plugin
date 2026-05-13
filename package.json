@@ -18,7 +18,8 @@
     "tests",
     "README.md",
     "CHANGELOG.md",
-    "gitdamnit.jpg"
+    "gitdamnit.jpg",
+    "gitdamnit.png"
   ],
   "scripts": {
     "build": "tsc",

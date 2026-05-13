@@ -20,6 +20,8 @@
 - Auto-save event handlers (`session.compacted`, `chat.message`) wrapped in `try/catch` — failures log but do not crash the plugin.
 - Test script runs all three suites: smoke (85), hardening (77), and comprehensive (817).
 - Version bumped to 1.0.0 — feature-complete, production-mature, with 979 tests, CI/CD, and full TypeScript build pipeline.
+- `package.json` `files` now includes `plugins/`, `tests/`, and `gitdamnit.png` in published tarball.
+- Removed `dist` from `.gitignore` so build output is properly versioned.
 
 ### Fixed
 - TOCTOU race in `checkpoint_restore_snapshot` — snapshot restore now uses a single history read.
