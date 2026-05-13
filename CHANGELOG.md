@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.4.0] — 2026-05-13
+
+### Added
+- **Hardening test suite** (`tests/checkpoint_hardening.js`): 77 new tests covering security, fuzz, atomic integrity, stress, and edge cases. Total test count: 162.
+- **Input size limit constants:** `MAX_STRING_LENGTH` (50KB), `MAX_ARRAY_ITEMS` (1000), `MAX_SANITIZED_LENGTH` (10KB).
+- **Clamp helpers:** `clampString`, `clampArray` — enforce input size limits in `checkpoint_save` execute path.
+- **Markdown sanitization:** `sanitizeForMarkdown`, `sanitizeArrayForMarkdown` — escapes `<` and `>` in handoff output.
+- **ESLint config:** Flat config with TypeScript support.
+- **TypeScript config:** `tsconfig.json` — build via `tsc` instead of raw `cpSync`.
+- **GitHub Actions CI:** Runs lint, build, and 162 tests on Node 18/20/22.
+
+### Changed
+- Build pipeline: replaced `fs.cpSync` with proper `tsc` compilation.
+- `deepMerge` now uses optional chaining (`incoming?.task?.title`) and `??` nullish coalescing for all fields. Preserves empty strings, empty arrays, and `null` as valid values.
+- `handoff.md` writing is now atomic — writes to temp file then renames into place.
+- `checkpoint_clear` now deletes all three state files: `checkpoint.json`, `handoff.md`, `checkpoint-history.json`.
+- Auto-save event handlers (`session.compacted`, `chat.message`) wrapped in `try/catch` — failures log but do not crash the plugin.
+- Test script runs both smoke (85) and hardening (77) suites.
+
+### Fixed
+- TOCTOU race in `checkpoint_restore_snapshot` — snapshot restore now uses a single history read.
+- Removed dead `isDirty` variable.
+
+### Security
+- Input clamping on all `checkpoint_save` string and array parameters.
+- Markdown escaping in all handoff output fields.
+- Prototype pollution resistance verified in test suite.
+
 ## [0.3.1] — 2026-05-08
 
 ### Changed

@@ -1,6 +1,6 @@
 {
   "name": "@gitdamnit/checkpoint-orchestrator",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Failure-resilient checkpointing for OpenCode — persistent task state, atomic writes, and resumable AI workflows",
   "repository": {
     "type": "git",
@@ -9,6 +9,7 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@gitdamnit/checkpoint-orchestrator": "^0.3.1",
     "@opencode-ai/plugin": "^1.14.40"
   },
   "main": "dist/checkpoint-orchestrator.js",
@@ -19,9 +20,17 @@
     "gitdamnit.jpg"
   ],
   "scripts": {
-    "build": "node -e \"require('fs').cpSync('plugins/checkpoint-orchestrator.ts', 'dist/checkpoint-orchestrator.js')\"",
+    "build": "tsc",
     "prepack": "npm run build",
-    "test": "node tests/checkpoint_smoke.js"
+    "test": "node tests/checkpoint_smoke.js && node tests/checkpoint_hardening.js",
+    "lint": "eslint plugins/"
   },
-  "author": "Evan Zellner <evanzellner@outlook.com>"
+  "author": "Evan Zellner <evanzellner@outlook.com>",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.7.0",
+    "eslint": "^10.3.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.3"
+  }
 }

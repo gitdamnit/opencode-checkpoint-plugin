@@ -40,40 +40,47 @@ type HistoryData = {
 }
 
 function generateHandoffMarkdown(data: CheckpointData): string {
-  const title = data.task?.title ?? "Untitled Task"
-  const status = data.task?.status ?? "unknown"
-  const updatedAt = data.updatedAt ?? "Unknown"
-  const objective = data.task?.objective ?? "Not set"
-  const summary = data.summary ?? "No summary recorded."
+  const title = sanitizeForMarkdown(data.task?.title ?? "Untitled Task")
+  const status = sanitizeForMarkdown(data.task?.status ?? "unknown")
+  const updatedAt = sanitizeForMarkdown(data.updatedAt ?? "Unknown")
+  const objective = sanitizeForMarkdown(data.task?.objective ?? "Not set")
+  const summary = sanitizeForMarkdown(data.summary ?? "No summary recorded.")
+
+  const sanitizedPlan = sanitizeArrayForMarkdown(data.currentPlan)
+  const sanitizedCompleted = sanitizeArrayForMarkdown(data.completedSteps)
+  const sanitizedNext = sanitizeArrayForMarkdown(data.nextSteps)
+  const sanitizedBlockers = sanitizeArrayForMarkdown(data.blockers)
+  const sanitizedFiles = sanitizeArrayForMarkdown(data.filesTouched)
+  const sanitizedNotes = sanitizeArrayForMarkdown(data.notes)
 
   const currentPlan =
-    data.currentPlan && data.currentPlan.length > 0
-      ? data.currentPlan.map((s, i) => `${i + 1}. ${s}`).join("\n")
+    sanitizedPlan.length > 0
+      ? sanitizedPlan.map((s, i) => `${i + 1}. ${s}`).join("\n")
       : "None recorded."
 
   const completedSteps =
-    data.completedSteps && data.completedSteps.length > 0
-      ? data.completedSteps.map((s) => `- [x] ${s}`).join("\n")
+    sanitizedCompleted.length > 0
+      ? sanitizedCompleted.map((s) => `- [x] ${s}`).join("\n")
       : "None."
 
   const nextSteps =
-    data.nextSteps && data.nextSteps.length > 0
-      ? data.nextSteps.map((s) => `- [ ] ${s}`).join("\n")
+    sanitizedNext.length > 0
+      ? sanitizedNext.map((s) => `- [ ] ${s}`).join("\n")
       : "None."
 
   const blockers =
-    data.blockers && data.blockers.length > 0
-      ? data.blockers.map((b) => `- ⚠️ ${b}`).join("\n")
+    sanitizedBlockers.length > 0
+      ? sanitizedBlockers.map((b) => `- ⚠️ ${b}`).join("\n")
       : "None."
 
   const filesTouched =
-    data.filesTouched && data.filesTouched.length > 0
-      ? data.filesTouched.map((f) => `- 📄 ${f}`).join("\n")
+    sanitizedFiles.length > 0
+      ? sanitizedFiles.map((f) => `- 📄 ${f}`).join("\n")
       : "None recorded."
 
   const notes =
-    data.notes && data.notes.length > 0
-      ? data.notes.map((n) => `- ${n}`).join("\n")
+    sanitizedNotes.length > 0
+      ? sanitizedNotes.map((n) => `- ${n}`).join("\n")
       : "None."
 
   return `# Handoff — ${title}
@@ -121,6 +128,20 @@ async function readJSON<T>(path: string): Promise<T | null> {
   }
 }
 
+const MAX_STRING_LENGTH = 50000
+const MAX_ARRAY_ITEMS = 1000
+const MAX_SANITIZED_LENGTH = 10000
+
+function clampString(s: string | undefined | null, max: number): string | undefined {
+  if (typeof s !== "string") return undefined
+  return s.length > max ? s.slice(0, max) : s
+}
+
+function clampArray(a: string[] | undefined | null, max: number): string[] | undefined {
+  if (!Array.isArray(a)) return undefined
+  return a.length > max ? a.slice(0, max) : a
+}
+
 function deepMerge(
   existing: CheckpointData | null,
   incoming: Partial<CheckpointData>,
@@ -129,18 +150,28 @@ function deepMerge(
     version: SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
     task: {
-      title: incoming.task?.title ?? existing?.task?.title,
-      objective: incoming.task?.objective ?? existing?.task?.objective,
-      status: incoming.task?.status ?? existing?.task?.status ?? "in_progress",
+      title: incoming?.task?.title ?? existing?.task?.title,
+      objective: incoming?.task?.objective ?? existing?.task?.objective,
+      status: incoming?.task?.status ?? existing?.task?.status ?? "in_progress",
     },
-    summary: incoming.summary ?? existing?.summary,
-    currentPlan: incoming.currentPlan ?? existing?.currentPlan ?? [],
-    completedSteps: incoming.completedSteps ?? existing?.completedSteps ?? [],
-    nextSteps: incoming.nextSteps ?? existing?.nextSteps ?? [],
-    blockers: incoming.blockers ?? existing?.blockers ?? [],
-    filesTouched: incoming.filesTouched ?? existing?.filesTouched ?? [],
-    notes: incoming.notes ?? existing?.notes ?? [],
+    summary: incoming?.summary ?? existing?.summary,
+    currentPlan: incoming?.currentPlan ?? existing?.currentPlan ?? [],
+    completedSteps: incoming?.completedSteps ?? existing?.completedSteps ?? [],
+    nextSteps: incoming?.nextSteps ?? existing?.nextSteps ?? [],
+    blockers: incoming?.blockers ?? existing?.blockers ?? [],
+    filesTouched: incoming?.filesTouched ?? existing?.filesTouched ?? [],
+    notes: incoming?.notes ?? existing?.notes ?? [],
   }
+}
+
+function sanitizeForMarkdown(s: string | undefined | null): string {
+  if (typeof s !== "string") return ""
+  return s.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+function sanitizeArrayForMarkdown(arr: string[] | undefined | null): string[] {
+  if (!arr) return []
+  return arr.map((s) => sanitizeForMarkdown(s))
 }
 
 export const CheckpointPlugin: Plugin = async (ctx) => {
@@ -151,7 +182,6 @@ export const CheckpointPlugin: Plugin = async (ctx) => {
 
   let lastInjectedHash = ""
   let messagesSinceLastSave = 0
-  let isDirty = false
 
   async function load(): Promise<CheckpointData | null> {
     const loaded = await readJSON<CheckpointData>(file)
@@ -193,7 +223,9 @@ export const CheckpointPlugin: Plugin = async (ctx) => {
     await rename(tmp, file)
 
     const handoff = generateHandoffMarkdown(merged)
-    await writeFile(handoffFile, handoff, "utf8")
+    const handoffTmp = handoffFile + ".tmp." + Date.now()
+    await writeFile(handoffTmp, handoff, "utf8")
+    await rename(handoffTmp, handoffFile)
 
     const name = snapshotName ?? `auto-${Date.now()}`
     const savedAt = new Date().toISOString()
@@ -243,27 +275,24 @@ export const CheckpointPlugin: Plugin = async (ctx) => {
           snapshotName: tool.schema.string().optional(),
         },
         async execute(args) {
-          // Trigger C: explicit agent-initiated save
-          // This is the primary save path. Triggers A and B are safety nets only.
           const result = await save(
             {
               task: {
-                title: args.title,
-                objective: args.objective,
+                title: clampString(args.title, MAX_STRING_LENGTH),
+                objective: clampString(args.objective, MAX_STRING_LENGTH),
                 status: args.status,
               },
-              summary: args.summary,
-              currentPlan: args.currentPlan,
-              completedSteps: args.completedSteps,
-              nextSteps: args.nextSteps,
-              blockers: args.blockers,
-              filesTouched: args.filesTouched,
-              notes: args.notes,
+              summary: clampString(args.summary, MAX_SANITIZED_LENGTH),
+              currentPlan: clampArray(args.currentPlan, MAX_ARRAY_ITEMS),
+              completedSteps: clampArray(args.completedSteps, MAX_ARRAY_ITEMS),
+              nextSteps: clampArray(args.nextSteps, MAX_ARRAY_ITEMS),
+              blockers: clampArray(args.blockers, MAX_ARRAY_ITEMS),
+              filesTouched: clampArray(args.filesTouched, MAX_ARRAY_ITEMS),
+              notes: clampArray(args.notes, MAX_ARRAY_ITEMS),
             },
             args.snapshotName,
           )
           messagesSinceLastSave = 0
-          isDirty = false
           return JSON.stringify(result, null, 2)
         },
       }),
@@ -303,11 +332,21 @@ export const CheckpointPlugin: Plugin = async (ctx) => {
       }),
 
       checkpoint_clear: tool({
-        description: "Delete the checkpoint file entirely.",
+        description: "Delete all checkpoint state files (checkpoint.json, handoff.md, checkpoint-history.json)",
         args: {},
         async execute() {
-          await unlink(file).catch(() => {})
-          return JSON.stringify({ cleared: true }, null, 2)
+          const results: string[] = []
+          for (const f of [file, handoffFile, historyFile]) {
+            try {
+              await unlink(f)
+              results.push(`${f} deleted`)
+            } catch (e: any) {
+              if (e.code !== "ENOENT") {
+                results.push(`${f} error: ${e.message}`)
+              }
+            }
+          }
+          return JSON.stringify({ cleared: true, details: results }, null, 2)
         },
       }),
 
@@ -368,9 +407,18 @@ export const CheckpointPlugin: Plugin = async (ctx) => {
         },
         async execute(args) {
           const liveState = await load()
+          const history = await loadHistory()
+          const entry = history.snapshots.find((s) => s.name === args.name)
+          if (!entry) {
+            return JSON.stringify(
+              { error: "Snapshot not found", name: args.name, available: history.snapshots.map((s) => s.name) },
+              null,
+              2,
+            )
+          }
+
           if (liveState) {
             const preRestoreName = `pre-restore-${Date.now()}`
-            const history = await loadHistory()
             history.snapshots.push({
               name: preRestoreName,
               savedAt: new Date().toISOString(),
@@ -380,39 +428,14 @@ export const CheckpointPlugin: Plugin = async (ctx) => {
               history.snapshots = history.snapshots.slice(-MAX_HISTORY)
             }
             await saveHistory(history)
-
-            const targetHistory = await loadHistory()
-            const target = targetHistory.snapshots.find(
-              (s) => s.name === args.name,
-            )
-            if (!target) {
-              return JSON.stringify(
-                { error: "Snapshot not found", name: args.name },
-                null,
-                2,
-              )
-            }
-            await save(target.data)
+            await save(entry.data)
             return JSON.stringify(
-              {
-                restored: true,
-                name: args.name,
-                undoSnapshot: preRestoreName,
-              },
+              { restored: true, name: args.name, undoSnapshot: preRestoreName },
               null,
               2,
             )
           }
 
-          const history = await loadHistory()
-          const entry = history.snapshots.find((s) => s.name === args.name)
-          if (!entry) {
-            return JSON.stringify(
-              { error: "Snapshot not found", name: args.name },
-              null,
-              2,
-            )
-          }
           await save(entry.data)
           return JSON.stringify(
             { restored: true, name: args.name, undoSnapshot: null },
@@ -446,58 +469,78 @@ Prioritize nextSteps.
 
     event: async ({ event }) => {
       if (event.type !== "session.compacted") return
-
-      const existing = await load()
-      if (existing) {
-        await save({})
+      try {
+        const existing = await load()
+        if (existing) {
+          await save({})
+          await ctx.client.app.log({
+            body: {
+              service: "checkpoint",
+              level: "info",
+              message:
+                "Auto-snapshot on session.compacted (existing state re-saved)",
+            },
+          })
+        } else {
+          await save({
+            task: {
+              title: "Auto-synthesized checkpoint",
+              status: "in_progress",
+            },
+            summary:
+              "Session compacted without prior checkpoint_save call. State synthesized automatically.",
+            notes: [
+              "Auto-generated on session.compacted — agent did not call checkpoint_save before compaction.",
+            ],
+          })
+          await ctx.client.app.log({
+            body: {
+              service: "checkpoint",
+              level: "warn",
+              message:
+                "Auto-snapshot on session.compacted (synthesized — no prior save found)",
+            },
+          })
+        }
+      } catch (e: any) {
         await ctx.client.app.log({
           body: {
             service: "checkpoint",
-            level: "info",
-            message:
-              "Auto-snapshot on session.compacted (existing state re-saved)",
-          },
-        })
-      } else {
-        await save({
-          task: {
-            title: "Auto-synthesized checkpoint",
-            status: "in_progress",
-          },
-          summary:
-            "Session compacted without prior checkpoint_save call. State synthesized automatically.",
-          notes: [
-            "Auto-generated on session.compacted — agent did not call checkpoint_save before compaction.",
-          ],
-        })
-        await ctx.client.app.log({
-          body: {
-            service: "checkpoint",
-            level: "warn",
-            message:
-              "Auto-snapshot on session.compacted (synthesized — no prior save found)",
+            level: "error",
+            message: `Auto-save on session.compacted failed: ${e.message}`,
           },
         })
       }
     },
 
-    "chat.message": async (_ctx, _output) => {
+    "chat.message": async (_ctx: any, _output: any) => {
       messagesSinceLastSave++
       if (messagesSinceLastSave >= AUTOSAVE_EVERY_N_MESSAGES) {
-        const existing = await load()
-        if (existing) {
-          await save(existing)
+        try {
+          const existing = await load()
+          if (existing) {
+            await save(existing)
+            messagesSinceLastSave = 0
+            await ctx.client.app.log({
+              body: {
+                service: "checkpoint",
+                level: "info",
+                message: `Auto-save triggered after ${AUTOSAVE_EVERY_N_MESSAGES} messages`,
+                extra: { updatedAt: existing.updatedAt },
+              },
+            })
+          } else {
+            messagesSinceLastSave = 0
+          }
+        } catch (e: any) {
           messagesSinceLastSave = 0
           await ctx.client.app.log({
             body: {
               service: "checkpoint",
-              level: "info",
-              message: `Auto-save triggered after ${AUTOSAVE_EVERY_N_MESSAGES} messages`,
-              extra: { updatedAt: existing.updatedAt },
+              level: "error",
+              message: `Auto-save after ${AUTOSAVE_EVERY_N_MESSAGES} messages failed: ${e.message}`,
             },
           })
-        } else {
-          messagesSinceLastSave = 0
         }
       }
     },
