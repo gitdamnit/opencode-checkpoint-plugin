@@ -24,6 +24,7 @@
 ### Fixed
 - TOCTOU race in `checkpoint_restore_snapshot` — snapshot restore now uses a single history read.
 - Removed dead `isDirty` variable.
+- Removed circular self-dependency `@gitdamnit/checkpoint-orchestrator: ^0.3.1` from `dependencies`.
 
 ### Security
 - Input clamping on all `checkpoint_save` string and array parameters.

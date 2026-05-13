@@ -61,12 +61,12 @@ On session compacting, the plugin automatically injects the checkpoint state int
 
 ## Test Suite
 
-| Suite | Tests | Coverage |
-|-------|-------|----------|
-| `checkpoint_smoke.js` | 85 | Core functionality: fresh saves, deep merge, partial updates, status progression, atomic writes, handoff generation, ring buffer, snapshot ops, auto-save counter |
-| `checkpoint_hardening.js` | 77 | Security: prototype pollution, Markdown injection, XSS vectors. Fuzz: type coercion, null/undefined handling. Stress: 100 merges, ring buffer limits. Edge cases: status transitions, empty states, TOCTOU, schema versions |
-| `checkpoint_comprehensive.js` | 817 | Property-based fuzz (100 iterations), filesystem lifecycle, recovery & resilience, atomic verification, ring buffer boundaries, deep merge combinatorial (all field types, empty strings, null, chaining), sanitization (special chars, unicode, handoff context), clamp boundaries, schema versioning, timestamp ISO format, stress (1000 merges + 200 file saves), security (4 prototype pollution variants, DoS, injection across all contexts), snapshot find/undo, handoff output structure, checkpoint clear |
-| **Total** | **979** | |
+| Suite | Tests | Result | Coverage |
+|-------|-------|--------|----------|
+| `checkpoint_smoke.js` | 85 | `85 passed, 0 failed` | Core functionality: fresh saves, deep merge, partial updates, status progression, atomic writes, handoff generation, ring buffer, snapshot ops, auto-save counter |
+| `checkpoint_hardening.js` | 77 | `77 passed, 0 failed` | Security: prototype pollution, Markdown injection, XSS vectors. Fuzz: type coercion, null/undefined handling. Stress: 100 merges, ring buffer limits. Edge cases: status transitions, empty states, TOCTOU, schema versions |
+| `checkpoint_comprehensive.js` | 817 | `817 passed, 0 failed` | Property-based fuzz (100 iterations), filesystem lifecycle, recovery & resilience, atomic verification, ring buffer boundaries, deep merge combinatorial (all field types, empty strings, null, chaining), sanitization (special chars, unicode, handoff context), clamp boundaries, schema versioning, timestamp ISO format, stress (1000 merges + 200 file saves), security (4 prototype pollution variants, DoS, injection across all contexts), snapshot find/undo, handoff output structure, checkpoint clear |
+| **Total** | **979** | **All passing** | |
 
 All tests run in CI on Node.js 18, 20, and 22.
 
