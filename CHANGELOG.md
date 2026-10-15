@@ -1,5 +1,77 @@
 # Changelog
 
+## [2.0.0-dev.0] — 2026-10-15
+
+Development release. Not published, not tagged. Breaking storage and plugin-API
+change; `1.0.1` on `main` is unaffected.
+
+### Added
+- **SQLite persistence.** `node:sqlite` (built into Node ≥ 22.5 and Bun ≥ 1.4) is
+  the authoritative store. No native module, no build step on install, no ABI to
+  match. Schema: `projects`, `sessions`, `checkpoints`, `snapshots`,
+  `session_runtime`, `migrations`, versioned in `PRAGMA user_version` and
+  migrated forward in transactions.
+- **Session isolation.** Every checkpoint, snapshot, counter and dedup hash is
+  scoped by `session_id`. Sessions can no longer overwrite or inherit each
+  other's state; child sessions inherit nothing implicitly.
+- **Session-scoped tool context.** Tools resolve the calling session and project
+  from the tool context instead of the plugin's working directory.
+- **`checkpoint_migrate` tool** reporting legacy JSON data and adopting it into a
+  session on explicit request.
+- **Legacy JSON migration.** Transactional, idempotent via a ledger row, originals
+  copied and never deleted, imported into a `legacy::<projectID>` namespace rather
+  than into a live session. Legacy names and timestamps are preserved.
+- **Synthesized-state tracking.** A compaction with no prior checkpoint records a
+  clearly marked placeholder instead of inferring progress.
+- **Per-session handoff files** at `.opencode/state/handoff-<sessionId>.md`,
+  regenerable from the database.
+- **Source-level test suite.** `node:test` suites that import the built `dist/`
+  output and drive the real V2 plugin entry, plus a reproducible SQLite driver
+  conformance probe.
+- **Documentation:** `docs/ARCHITECTURE.md`, `docs/MIGRATION.md`,
+  `docs/COMPATIBILITY.md`.
+
+### Changed
+- Plugin API migrated from V1 (`@opencode-ai/plugin`) to V2 (`@opencode/plugin`
+  2.0.21): `Plugin.define({ id, setup })`, tools via `ctx.tool.transform`,
+  `experimental.session.compacting` → `ctx.session.hook("compaction", …)`,
+  `chat.message` → `ctx.session.hook("prompt", …)`, `event` →
+  `ctx.event.subscribe()`, `ctx.directory` → `ctx.location`.
+- OpenCode configuration key is now `plugins`, not `plugin`.
+- A periodic save that produces no change no longer rewrites the checkpoint,
+  moves `updatedAt`, or creates a snapshot.
+- Snapshot pruning always retains the newest `pre-restore` undo snapshot.
+- `checkpoint_clear` clears only the calling session.
+- Handoff is generated per session and is never read back as state.
+- `historyLimit` is configurable and applies per session.
+- TypeScript build switched to `module`/`moduleResolution` `NodeNext` with
+  explicit `.js` specifiers; `typecheck` script added.
+- CI matrix moved to Node 22 and 24 (`node:sqlite` requires ≥ 22.5).
+- Published artifact trimmed to `dist/` plus documentation and images; the
+  database and development state are never packaged.
+
+### Fixed
+- Read-merge-write in `save()` is now a single `BEGIN IMMEDIATE` transaction; two
+  writers on one session can no longer lose each other's fields.
+- Automatic snapshot names are collision-free (`auto-<ms>-<pid><seq>`). The
+  previous millisecond-only name collided under rapid writes and silently
+  replaced history through the `(session_id, name)` constraint.
+- A malformed or missing session id now throws instead of binding `NULL` and
+  silently matching no rows.
+- The handoff directory is created before writing, so the first export no longer
+  fails silently.
+- Legacy import rolls back completely on failure and can be retried.
+
+### Removed
+- `@opencode-ai/plugin` (V1 SDK) dependency.
+- Project-level JSON as authoritative storage, and the project-wide
+  `checkpoint.json` write path.
+
+## [1.0.1] — 2026-05-13
+
+Version-metadata-only release: `package.json` and the lockfile were bumped from
+`1.0.0` to `1.0.1`. No code or behaviour change.
+
 ## [1.0.0] — 2026-05-13
 
 ### Added
