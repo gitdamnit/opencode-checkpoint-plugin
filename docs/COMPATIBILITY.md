@@ -37,6 +37,19 @@ a separate package version rather than one hybrid export, and the V1 side would
 have to keep the project-level storage model (and document that it is not
 session-isolated).
 
+## Toolkit independence
+
+This plugin is part of the `@gitdamnit` toolkit but has no dependency on its
+siblings. It declares only `@opencode/plugin`, imports no other plugin's modules,
+owns its storage, and requires no particular hook or load order. Details,
+including the integration test matrix and behaviour when a companion plugin is
+absent or failing, are in [INDEPENDENCE.md](INDEPENDENCE.md).
+
+Git That Shit and Stranger Danger were not available in this development
+environment, so this repository makes **no claim** to have been tested against
+them. Co-existence is verified against a stand-in plugin that uses the same host
+contracts.
+
 ## Runtime compatibility
 
 | Runtime | Supported | Notes |
