@@ -182,6 +182,21 @@ contracts they use.
 | Git That Shit + Checkpoint Orchestrator | Both functional | Not testable here |
 | All three plugins | All functional | Not testable here |
 
+Why the sibling rows could not be executed in this environment, recorded from a
+read-only inspection of the sibling checkouts (their repositories were not
+modified):
+
+* `@gitdamnit/opencode-git-that-shit` 0.2.0 depends on `@opencode-ai/plugin`
+  `^1.14.48` — the V1 SDK.
+* `@gitdamnit/stranger-danger` 0.1.0 declares a peer dependency on
+  `@opencode-ai/plugin` `>=1.0.0` — also V1.
+
+V1 plugin implementations do not run in a V2 host, so a three-plugin V2 matrix
+cannot be run against those revisions as they stand. Neither checkout references
+`@gitdamnit/checkpoint-orchestrator` in any dependency or source file, so there is
+no inbound coupling to account for either. This plugin is V2-only, so the lab
+should run the full matrix once the siblings ship V2 entry points.
+
 For the Docker Plugin Test Lab, this plugin needs no special support: install it
 by package name or from a local path, give it an isolated `databasePath` or
 `CHECKPOINT_ORCHESTRATOR_DB`, and use a disposable project directory. Assertions
