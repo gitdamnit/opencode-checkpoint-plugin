@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feat/**"]
   pull_request:
     branches: [main]
 
@@ -10,8 +10,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [18, 20, 22]
+        # node:sqlite requires Node >= 22.5.
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,5 +22,37 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm run build
       - run: npm test
+
+  # Confirms the built package loads and works when installed, rather than only
+  # from a workspace checkout.
+  packaged-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Pack and install into a clean project
+        run: |
+          npm pack --pack-destination /tmp
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y
+          npm install /tmp/gitdamnit-checkpoint-orchestrator-*.tgz
+          node --input-type=module -e "
+            const plugin = (await import('@gitdamnit/checkpoint-orchestrator')).default
+            if (typeof plugin.setup !== 'function') throw new Error('default export is not a V2 plugin')
+            if (!plugin.id) throw new Error('plugin id missing')
+            console.log('packaged plugin loads:', plugin.id)
+          "
+      - name: Verify no development state is published
+        run: |
+          tar -tzf /tmp/gitdamnit-checkpoint-orchestrator-*.tgz > /tmp/contents.txt
+          ! grep -E "\.db$|\.db-wal$|\.db-shm$|node_modules/|tests/|plugins/" /tmp/contents.txt
+          grep -q "package/dist/checkpoint-orchestrator.js" /tmp/contents.txt
+          grep -q "package/README.md" /tmp/contents.txt
