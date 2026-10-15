@@ -13,6 +13,11 @@ import { join } from "node:path"
 import plugin, { PLUGIN_ID, PLUGIN_VERSION, extractSessionID, resolveOptions } from "../dist/checkpoint-orchestrator.js"
 import { callTool, makeHost } from "./helpers/fake-host.mjs"
 
+// Suite guard: never let a test touch the developer's real data directory. Some
+// cases deliberately construct a context with no options, so the environment
+// override is the only thing keeping the default path out of the picture.
+process.env.CHECKPOINT_ORCHESTRATOR_DB = join(mkdtempSync(join(tmpdir(), "co-guard-")), "guard.db")
+
 const EXPECTED_TOOLS = [
   "checkpoint_save",
   "checkpoint_load",
