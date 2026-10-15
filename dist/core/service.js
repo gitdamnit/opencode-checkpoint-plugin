@@ -6,13 +6,13 @@
  * session's data.
  */
 import { existsSync, rmSync } from "node:fs";
-import { renderHandoff, handoffFilePath, writeHandoffFile } from "./handoff.js";
+import { HANDOFF_DIR, renderHandoff, handoffFilePath, writeHandoffFile } from "./handoff.js";
 import { importLegacyState, legacySessionId, migrationLedgerId, readLegacyState, } from "./legacy.js";
 import { autoSnapshotName, contentFingerprint, deepMerge, nowIso } from "./util.js";
 export const DEFAULT_SERVICE_OPTIONS = {
     historyLimit: 10,
     handoffEnabled: true,
-    handoffDirectory: ".opencode/state",
+    handoffDirectory: HANDOFF_DIR,
     autosaveEvery: 5,
     maxInjectionChars: 20_000,
 };
@@ -322,7 +322,10 @@ export class CheckpointService {
             alreadyImported,
             legacySessionID,
             legacySnapshots: state.snapshots.length,
-            warnings: state.unreadable,
+            warnings: [
+                ...state.unreadable,
+                ...state.foreign.map((file) => `${file} is not checkpoint-orchestrator data; left untouched`),
+            ],
         };
         if (!adopt) {
             const available = this.store
@@ -337,7 +340,9 @@ export class CheckpointService {
                     ? "no-legacy-state"
                     : state.unreadable.length > 0
                         ? "unreadable-legacy-state"
-                        : "legacy-state-has-no-live-checkpoint",
+                        : state.foreign.length > 0
+                            ? "unrecognized-legacy-state"
+                            : "legacy-state-has-no-live-checkpoint",
             };
         }
         const outcome = this.save(ref, state.checkpoint, {

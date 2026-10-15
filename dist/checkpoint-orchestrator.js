@@ -6,14 +6,17 @@
  * the test suite. All persistence lives in SQLite (see `core/store.ts`).
  */
 import { Plugin } from "@opencode/plugin";
+import { HANDOFF_DIR } from "./core/handoff.js";
 import { legacySessionId } from "./core/legacy.js";
 import { resolveDatabasePath } from "./core/paths.js";
 import { CheckpointService, DEFAULT_SERVICE_OPTIONS, } from "./core/service.js";
 import { CheckpointStore } from "./core/store.js";
 import { MAX_ARRAY_ITEMS, MAX_SANITIZED_LENGTH, MAX_STRING_LENGTH, clampArray, clampInt, clampString, isStatus, } from "./core/util.js";
 export const PLUGIN_ID = "gitdamnit.checkpoint-orchestrator";
-export const PLUGIN_VERSION = "2.0.0-dev.0";
-const DEFAULT_HANDOFF_DIR = ".opencode/state";
+export const PLUGIN_VERSION = "2.0.0-dev.1";
+// Namespaced default: a co-installed plugin sharing .opencode/ must never see
+// our files, and we must never write into a directory we do not own.
+const DEFAULT_HANDOFF_DIR = HANDOFF_DIR;
 function objectSchema(properties, required = []) {
     return {
         type: "object",
