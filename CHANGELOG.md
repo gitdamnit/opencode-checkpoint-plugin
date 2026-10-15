@@ -1,5 +1,41 @@
 # Changelog
 
+## [2.0.0-dev.1] — 2026-10-15
+
+Independence and interoperability hardening. No change to the storage contract.
+
+### Added
+- `docs/INDEPENDENCE.md`: responsibilities, configuration and storage namespaces,
+  registered hooks, order-independence guarantees, behaviour when companion
+  plugins are absent, disabled, failing or outdated, the optional read-only
+  interoperability contract, and the integration test matrix.
+- `tests/interop.test.js` (12 tests): works alone; declares no dependency on
+  another toolkit plugin; needs no host domain beyond the ones it documents
+  (enforced with a throwing proxy); coexists with a foreign plugin in either
+  registration order; is unaffected by a companion that throws or fails to load;
+  keeps storage ownership disjoint; keeps five sessions isolated; survives
+  cleanup, reload and double loading.
+- `tests/helpers/fake-host.mjs`, a shared fake of the V2 host used by the wiring
+  and interoperability suites.
+
+### Changed
+- Derived handoffs moved into this plugin's own namespace:
+  `.opencode/state/checkpoint-orchestrator/handoff-<sessionId>.md`. It no longer
+  writes directly into the shared `.opencode/state/` directory, and the export
+  now carries the marker `checkpoint-orchestrator/handoff@1` so consumers can
+  detect format changes.
+- Migration backups are written to
+  `.opencode/state/checkpoint-orchestrator/legacy-backup/` instead of beside the
+  originals in the shared directory.
+- `handoffDir` default updated to match; a relative override resolving to an
+  empty path falls back to the namespaced default.
+
+### Fixed
+- A file at the legacy path that is not this plugin's data (for example another
+  tool's `checkpoint.json`) is now detected, reported and skipped instead of
+  being normalised into an empty checkpoint and imported. It is never overwritten
+  and it no longer prevents a genuine legacy file from importing later.
+
 ## [2.0.0-dev.0] — 2026-10-15
 
 Development release. Not published, not tagged. Breaking storage and plugin-API

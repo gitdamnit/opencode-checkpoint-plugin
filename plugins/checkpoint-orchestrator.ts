@@ -7,6 +7,7 @@
  */
 import { Plugin } from "@opencode/plugin"
 import type { Info as ToolInfo, ToolContext } from "@opencode/plugin/promise/tool"
+import { HANDOFF_DIR } from "./core/handoff.js"
 import { legacySessionId } from "./core/legacy.js"
 import { resolveDatabasePath } from "./core/paths.js"
 import {
@@ -28,9 +29,11 @@ import {
 } from "./core/util.js"
 
 export const PLUGIN_ID = "gitdamnit.checkpoint-orchestrator"
-export const PLUGIN_VERSION = "2.0.0-dev.0"
+export const PLUGIN_VERSION = "2.0.0-dev.1"
 
-const DEFAULT_HANDOFF_DIR = ".opencode/state"
+// Namespaced default: a co-installed plugin sharing .opencode/ must never see
+// our files, and we must never write into a directory we do not own.
+const DEFAULT_HANDOFF_DIR = HANDOFF_DIR
 
 type InputSchema = ToolInfo["input"]
 
