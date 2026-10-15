@@ -13,12 +13,18 @@
  */
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import plugin, { PLUGIN_ID } from "../dist/checkpoint-orchestrator.js"
 import { PLUGIN_STATE_DIR } from "../dist/core/handoff.js"
 import { callTool, makeHost, toolContext } from "./helpers/fake-host.mjs"
+
+// Suite guard: never let a test touch the developer's real data directory. Some
+// cases deliberately construct a context with no options, so the environment
+// override is the only thing keeping the default path out of the picture.
+process.env.CHECKPOINT_ORCHESTRATOR_DB = join(mkdtempSync(join(tmpdir(), "co-guard-")), "guard.db")
 
 const MY_TOOLS = ["checkpoint_save", "checkpoint_load", "checkpoint_status", "checkpoint_list"]
 
@@ -351,13 +357,21 @@ test("tool calls without a session are refused, so no session can be impersonate
 })
 
 test("the plugin loads with an empty options object and with no options at all", async () => {
-  for (const options of [undefined, {}]) {
+  for (const mode of ["empty", "absent"]) {
     const host = makeHost()
     try {
-      const ctx = host.contextFor(options ?? {})
-      if (options === undefined) delete ctx.options
+      const ctx = host.contextFor({})
+      // "absent" is the hostile case: with no options the plugin falls back to its
+      // platform default path, which the suite guard redirects out of the
+      // developer's real data directory.
+      if (mode === "absent") delete ctx.options
+
+      // Both modes share the guard database, so each uses its own session.
+      const session = `ses_${mode}`
       const cleanup = await plugin.setup(ctx)
-      assert.equal((await callTool(host, "checkpoint_status")).exists, false)
+      assert.equal((await callTool(host, "checkpoint_status", {}, session)).exists, false)
+      await callTool(host, "checkpoint_save", { title: `mode-${mode}` }, session)
+      assert.equal((await callTool(host, "checkpoint_load", {}, session)).task.title, `mode-${mode}`)
       await cleanup()
     } finally {
       host.cleanup()
