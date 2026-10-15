@@ -137,8 +137,9 @@ function main() {
     // ---------------------------------------------------------- clean consumer
     writeFileSync(join(project, "package.json"), JSON.stringify({ name: "co-integration", version: "1.0.0", type: "module" }, null, 2))
     execFileSync("npm", ["install", "--no-audit", "--no-fund", tarball], { cwd: project, encoding: "utf8", timeout })
+    const local = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"))
     const installed = JSON.parse(readFileSync(join(project, "node_modules/@gitdamnit/checkpoint-orchestrator/package.json"), "utf8"))
-    record("installed package version", installed.version === "2.0.0-dev.0", installed.version)
+    record("installed package version matches the checkout", installed.version === local.version, installed.version)
 
     // OpenCode resolves a plugin given by *package name* by installing it from the
     // npm registry, which for an unreleased build means the old published version.

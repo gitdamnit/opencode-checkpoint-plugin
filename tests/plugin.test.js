@@ -11,6 +11,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import plugin, { PLUGIN_ID, PLUGIN_VERSION, extractSessionID, resolveOptions } from "../dist/checkpoint-orchestrator.js"
+import { callTool, makeHost } from "./helpers/fake-host.mjs"
 
 const EXPECTED_TOOLS = [
   "checkpoint_save",
@@ -22,149 +23,14 @@ const EXPECTED_TOOLS = [
   "checkpoint_restore_snapshot",
 ]
 
-function makeEventStream() {
-  const queue = []
-  let resolver = null
-  let closed = false
-  return {
-    push(event) {
-      if (resolver) {
-        const resolve = resolver
-        resolver = null
-        resolve({ value: event, done: false })
-      } else queue.push(event)
-    },
-    close() {
-      closed = true
-      if (resolver) {
-        const resolve = resolver
-        resolver = null
-        resolve({ value: undefined, done: true })
-      }
-    },
-    get pending() {
-      return queue.length
-    },
-    subscribe({ signal } = {}) {
-      const iterator = {
-        async next() {
-          if (queue.length > 0) return { value: queue.shift(), done: false }
-          if (closed || signal?.aborted) return { value: undefined, done: true }
-          return new Promise((resolve) => {
-            resolver = resolve
-            signal?.addEventListener(
-              "abort",
-              () => {
-                resolver = null
-                resolve({ value: undefined, done: true })
-              },
-              { once: true },
-            )
-          })
-        },
-        async return() {
-          closed = true
-          return { value: undefined, done: true }
-        },
-      }
-      return { [Symbol.asyncIterator]: () => iterator }
-    },
-  }
+// The fake host is shared with the interoperability suite.
+function harness(options = {}) {
+  const host = makeHost()
+  host.ctx = host.contextFor({ databasePath: host.databasePath, ...options })
+  return host
 }
 
-function makeHarness(options = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "co-plugin-"))
-  const projectDirectory = join(dir, "project")
-  const databasePath = join(dir, "checkpoints.db")
-  const tools = new Map()
-  const hooks = new Map()
-  const stream = makeEventStream()
-  const projects = new Map()
-  const sessionDirectories = {}
-  let transformCalls = 0
-
-  const ctx = {
-    app: { name: "opencode", version: "2.0.21", channel: "test" },
-    location: { directory: projectDirectory, project: { id: "proj-1", directory: projectDirectory, canonical: projectDirectory } },
-    options: { databasePath, ...options },
-    tool: {
-      async transform(callback) {
-        transformCalls++
-        callback({
-          add: (definition) => tools.set(definition.name, definition),
-          list: () => [...tools.values()],
-          get: (id) => tools.get(id),
-          remove: (id) => tools.delete(id),
-          namespace: () => {},
-          update: (id, update) => {
-            const found = tools.get(id)
-            if (found) update(found)
-          },
-        })
-        return { dispose: async () => {} }
-      },
-      async list() {
-        return [...tools.values()]
-      },
-      async hook() {
-        return { dispose: async () => {} }
-      },
-      async reload() {},
-    },
-    session: {
-      async get({ sessionID }) {
-        return {
-          id: sessionID,
-          projectID: projects.get(sessionID) ?? "proj-1",
-          title: `session ${sessionID}`,
-          location: { directory: sessionDirectories[sessionID] ?? projectDirectory },
-        }
-      },
-      async hook(name, callback) {
-        hooks.set(name, callback)
-        return { dispose: async () => {} }
-      },
-    },
-    event: { subscribe: (input) => stream.subscribe(input) },
-  }
-
-  return {
-    dir,
-    projectDirectory,
-    databasePath,
-    ctx,
-    tools,
-    hooks,
-    stream,
-    projects,
-    sessionDirectories,
-    get transformCalls() {
-      return transformCalls
-    },
-    cleanup() {
-      stream.close()
-      rmSync(dir, { recursive: true, force: true })
-    },
-  }
-}
-
-function toolContext(sessionID) {
-  return {
-    sessionID,
-    agent: "build",
-    messageID: "msg_1",
-    id: "call_1",
-    signal: new AbortController().signal,
-    progress: async () => {},
-  }
-}
-
-async function call(h, name, input = {}, sessionID = "ses_a") {
-  const tool = h.tools.get(name)
-  assert.ok(tool, `tool ${name} must be registered`)
-  const result = await tool.execute(input, toolContext(sessionID))
-  return result.content === undefined ? result : JSON.parse(result.content)
-}
+const call = callTool
 
 test("the plugin exports a V2 definition with a stable id", () => {
   assert.equal(plugin.id, PLUGIN_ID)
@@ -184,7 +50,7 @@ test("the deprecated V1 SDK is gone and the V2 SDK is a dependency", () => {
 })
 
 test("setup registers every tool, including the seven preserved names", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const cleanup = await plugin.setup(h.ctx)
     assert.equal(h.transformCalls, 1)
@@ -199,7 +65,7 @@ test("setup registers every tool, including the seven preserved names", async ()
 })
 
 test("tool schemas are JSON Schema objects the model can be given", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const cleanup = await plugin.setup(h.ctx)
     for (const [name, tool] of h.tools) {
@@ -223,7 +89,7 @@ test("tool schemas are JSON Schema objects the model can be given", async () => 
 })
 
 test("the full tool lifecycle works through the real wiring", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const cleanup = await plugin.setup(h.ctx)
 
@@ -285,7 +151,7 @@ test("the full tool lifecycle works through the real wiring", async () => {
 })
 
 test("two sessions using the same tools never see each other's data", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const cleanup = await plugin.setup(h.ctx)
 
@@ -318,7 +184,7 @@ test("two sessions using the same tools never see each other's data", async () =
 })
 
 test("a tool call without a session id refuses to touch state", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const cleanup = await plugin.setup(h.ctx)
     const result = await h.tools.get("checkpoint_save").execute({ title: "x" }, { sessionID: undefined })
@@ -332,14 +198,14 @@ test("a tool call without a session id refuses to touch state", async () => {
 })
 
 test("the compaction hook injects state once and then deduplicates", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const cleanup = await plugin.setup(h.ctx)
-    assert.ok(h.hooks.has("compaction"))
-    assert.ok(h.hooks.has("prompt"))
+    assert.equal(h.hooksFor("compaction").length, 1)
+    assert.equal(h.hooksFor("prompt").length, 1)
 
     await call(h, "checkpoint_save", { title: "Inflight", nextSteps: ["finish"] }, "ses_c")
-    const compaction = h.hooks.get("compaction")
+    const compaction = h.hookFor("compaction")
 
     const eventOne = { sessionID: "ses_c", system: [], messages: [], tools: {} }
     await compaction(eventOne)
@@ -361,10 +227,10 @@ test("the compaction hook injects state once and then deduplicates", async () =>
 })
 
 test("compaction synthesizes a marked placeholder when nothing was ever saved", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const cleanup = await plugin.setup(h.ctx)
-    const compaction = h.hooks.get("compaction")
+    const compaction = h.hookFor("compaction")
 
     const event = { sessionID: "ses_fresh", system: [], messages: [], tools: {} }
     await compaction(event)
@@ -381,10 +247,10 @@ test("compaction synthesizes a marked placeholder when nothing was ever saved", 
 })
 
 test("the prompt hook counts per session and only saves on real change", async () => {
-  const h = makeHarness({ autosaveEvery: 3 })
+  const h = harness({ autosaveEvery: 3 })
   try {
     const cleanup = await plugin.setup(h.ctx)
-    const prompt = h.hooks.get("prompt")
+    const prompt = h.hookFor("prompt")
 
     for (let i = 0; i < 3; i++) await prompt({ sessionID: "ses_p", prompt: {}, delivery: "steer" })
     // No checkpoint exists yet, so nothing is invented.
@@ -409,7 +275,7 @@ test("the prompt hook counts per session and only saves on real change", async (
 })
 
 test("the session.compacted event is a durable safety net", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const cleanup = await plugin.setup(h.ctx)
     await call(h, "checkpoint_save", { title: "event-driven", completedSteps: ["x"] }, "ses_ev")
@@ -437,7 +303,7 @@ test("extractSessionID accepts the shapes the event stream uses", () => {
 })
 
 test("cleanup closes the database, after which tools report an error instead of crashing", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const cleanup = await plugin.setup(h.ctx)
     await call(h, "checkpoint_save", { title: "before cleanup" })
@@ -458,7 +324,7 @@ test("an unusable database path makes the plugin inert rather than fatal", async
   const blockerFile = join(blockedRoot, "not-a-directory")
   writeFileSync(blockerFile, "in the way")
 
-  const h = makeHarness({ databasePath: join(blockerFile, "checkpoints.db") })
+  const h = harness({ databasePath: join(blockerFile, "checkpoints.db") })
   try {
     const cleanup = await plugin.setup(h.ctx)
     assert.equal(typeof cleanup, "function")
@@ -482,7 +348,11 @@ test("options are validated and clamped before use", () => {
   })
   assert.equal(resolved.service.historyLimit, 1000)
   assert.equal(resolved.service.autosaveEvery, 0, "negative values clamp to disabled")
-  assert.equal(resolved.service.handoffDirectory, ".opencode/state", "path traversal is rejected")
+  assert.equal(
+    resolved.service.handoffDirectory,
+    ".opencode/state/checkpoint-orchestrator",
+    "path traversal is rejected",
+  )
   assert.equal(resolved.service.maxInjectionChars, 1000)
   assert.equal(resolved.databasePath, "/tmp/x.db")
 
@@ -499,7 +369,7 @@ test("options are validated and clamped before use", () => {
 })
 
 test("legacy state is looked for in the session's own project, not the plugin's", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const { mkdirSync, writeFileSync } = await import("node:fs")
     const otherProject = join(h.dir, "other-project")
@@ -524,7 +394,7 @@ test("legacy state is looked for in the session's own project, not the plugin's"
 
     // The handoff export follows the same rule.
     const { existsSync } = await import("node:fs")
-    assert.equal(existsSync(join(otherState, `handoff-ses_foreign.md`)), true)
+    assert.equal(existsSync(join(otherState, "checkpoint-orchestrator", "handoff-ses_foreign.md")), true)
     await cleanup()
   } finally {
     h.cleanup()
@@ -532,7 +402,7 @@ test("legacy state is looked for in the session's own project, not the plugin's"
 })
 
 test("a legacy JSON checkpoint is reported and can be adopted explicitly", async () => {
-  const h = makeHarness()
+  const h = harness()
   try {
     const { mkdirSync, writeFileSync } = await import("node:fs")
     const stateDir = join(h.projectDirectory, ".opencode", "state")
