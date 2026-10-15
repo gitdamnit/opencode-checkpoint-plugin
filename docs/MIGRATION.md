@@ -41,9 +41,12 @@ Legacy files live at `.opencode/state/checkpoint.json` and
 
 On first load, for each project the plugin:
 
-1. Detects the legacy files and validates them.
-2. Copies them to `.opencode/state/<name>.legacy-backup-<timestamp>`. **Originals
-   are never modified or deleted.**
+1. Detects the legacy files and validates them. A file that parses but is not
+   this plugin's data is reported and skipped, never imported.
+2. Copies them to
+   `.opencode/state/checkpoint-orchestrator/legacy-backup/<name>.<timestamp>` —
+   this plugin's own namespace, not the shared directory. **Originals are never
+   modified or deleted.**
 3. Imports everything inside a single transaction into a clearly named legacy
    namespace: a project row for the directory, and a session row whose id is
    `legacy::<projectID>` with the title

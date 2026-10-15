@@ -100,11 +100,17 @@ migrations(id PK, project_id, applied_at, details)
    `UNIQUE(session_id, name)` and silently replace history.
 6. **Derived artifacts only.** `handoff.md` is written from committed rows and is
    never read back as authoritative state. Its path is
-   `handoff-<sanitized session id>.md`, so sessions cannot collide or escape the
+   `checkpoint-orchestrator/handoff-<sanitized session id>.md`, so sessions cannot collide or escape the
    state directory.
-7. **Legacy import is additive.** Originals are copied (never deleted), the
-   import is transactional and idempotent via a ledger row, and legacy state
-   lands in a `legacy::<projectID>` namespace rather than in a live session.
+7. **Legacy import is additive and gated.** Originals are copied (never deleted),
+   the import is transactional and idempotent via a ledger row, and legacy state
+   lands in a `legacy::<projectID>` namespace rather than in a live session. A
+   payload that does not match this plugin's schema is reported and skipped, so a
+   same-named file owned by another tool can never be consumed.
+8. **Namespaced persistence.** Everything this plugin writes lives under its own
+   namespace — the database directory, and
+   `.opencode/state/checkpoint-orchestrator/` for derived exports and migration
+   backups — so co-installed plugins sharing `.opencode/` cannot collide with it.
 
 ## Concurrency and durability
 

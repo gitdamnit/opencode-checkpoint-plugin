@@ -122,8 +122,11 @@ forward in transactions. WAL journaling and a busy timeout are enabled, foreign
 keys are enforced, and all multi-table writes are atomic.
 
 `handoff.md` is no longer authoritative. A derived, per-session
-`handoff-<sessionId>.md` is written under `.opencode/state/` and can be
-regenerated from the database at any time.
+`handoff-<sessionId>.md` is written under
+`.opencode/state/checkpoint-orchestrator/` — this plugin's own namespace, so a
+co-installed plugin sharing `.opencode/` can never collide with it. The export
+carries the marker `checkpoint-orchestrator/handoff@1` and can be regenerated
+from the database at any time.
 
 ## Automatic persistence
 
@@ -146,17 +149,36 @@ placeholders are never injected.
 | `historyLimit` | number | `10` | Snapshots retained per session. The newest `pre-restore` undo snapshot is always retained, even beyond the limit. |
 | `autosaveEvery` | number \| `false` | `5` | User prompts between periodic saves. `false` or `0` disables trigger B. |
 | `handoff` | boolean | `true` | Write the derived per-session handoff file. |
-| `handoffDir` | string | `.opencode/state` | Relative directory for handoff files. Absolute and parent-escaping paths are rejected. |
+| `handoffDir` | string | `.opencode/state/checkpoint-orchestrator` | Relative directory for handoff files. Absolute and parent-escaping paths are rejected. |
 | `maxInjectionChars` | number | `20000` | Cap on injected checkpoint JSON. |
 | `legacyImport` | `"namespace"` \| `"off"` | `"namespace"` | Import pre-SQLite JSON into a legacy namespace on startup. |
+
+## Independence from the other toolkit plugins
+
+This plugin is designed to be installed alone, alongside either of the other
+`@gitdamnit` toolkit plugins, or with both.
+
+* Runtime dependency: `@opencode/plugin` only. No plugin-to-plugin imports, no
+  shared framework, no plugin manager, no mandatory shared configuration.
+* It never reads or writes another plugin's storage, and never copies a live
+  SQLite database.
+* Correctness never depends on hook execution order. Its `prompt` hook only
+  observes, and its `compaction` hook only *appends* to the compaction context —
+  it never replaces another plugin's contribution or relies on one.
+* A companion that is missing, disabled, failing or older changes nothing about
+  how this plugin behaves.
+* The only optional interoperability offered is a versioned, read-only handoff
+  export; see [docs/INDEPENDENCE.md](docs/INDEPENDENCE.md).
 
 ## Upgrading from 1.x
 
 1. Install this version.
 2. Change `plugin` to `plugins` in your OpenCode configuration.
-3. Restart OpenCode. On first load, any `.opencode/state/checkpoint.json` is
-   backed up and imported into a clearly named legacy namespace — **not** into
-   any live session.
+3. Restart OpenCode. On first load, any `.opencode/state/checkpoint.json` that
+   matches this plugin's schema is backed up (into
+   `.opencode/state/checkpoint-orchestrator/legacy-backup/`) and imported into a
+   clearly named legacy namespace — **not** into any live session. A file that is
+   not this plugin's data is reported and left untouched.
 4. Run `checkpoint_migrate` to see what was found, then
    `checkpoint_migrate { "adopt": true }` in the session that should continue
    that work.
@@ -212,6 +234,11 @@ plugin loading.
   is no "clear everything" tool.
 * Session deletion in OpenCode does not delete stored checkpoints: they are kept
   so that no committed state is lost silently.
+* Independence guarantees, the test matrix, and behaviour with companion plugins
+  absent or failing are documented in
+  [docs/INDEPENDENCE.md](docs/INDEPENDENCE.md). The other two toolkit plugins were
+  not available in this development environment and have **not** been tested
+  together with this one; a stand-in plugin covers the same host contracts.
 
 ## License
 
