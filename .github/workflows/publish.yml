@@ -1,0 +1,48 @@
+name: Publish to npm
+
+# Carried over from the local working tree of the 1.0.x line. It only runs when a
+# GitHub release is published, so it is inert until someone publishes one.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify the release tag matches package.json
+        run: |
+          set -eu
+          tag="${{ github.event.release.tag_name }}"
+          pkg_version="$(node -p "require('./package.json').version")"
+          tag_version="${tag#v}"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "Release tag ($tag) does not match package.json ($pkg_version)" >&2
+            exit 1
+          fi
+
+      - name: Lint, typecheck, build, test
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run build
+          npm test
+
+      - name: Publish
+        run: npm publish --access public
