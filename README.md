@@ -2,14 +2,38 @@
 
 # @gitdamnit/checkpoint-orchestrator
 
-![npm version](https://img.shields.io/npm/v/@gitdamnit/checkpoint-orchestrator)
-![npm](https://img.shields.io/npm/dm/@gitdamnit/checkpoint-orchestrator)
-![CI](https://github.com/gitdamnit/opencode-checkpoint-plugin/actions/workflows/ci.yml/badge.svg)
-![Tests](https://img.shields.io/badge/tests-979%20passed-brightgreen)
+[![CI](https://github.com/gitdamnit/opencode-checkpoint-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/gitdamnit/opencode-checkpoint-plugin/actions/workflows/ci.yml)
 
-Failure-resilient checkpointing for OpenCode — persistent task state, atomic writes, automatic persistence, and resumable AI workflows.
+Failure-resilient, **session-isolated** checkpointing for OpenCode. Task state is
+persisted in SQLite so the next model, provider, or session can pick up exactly
+where the last one left off.
 
-Prevents context loss when switching models or providers during a session. The next model picks up exactly where the last one left off.
+> **Status: v2.0.0 development line.** This is a breaking release: storage moved
+> from project-level JSON to a SQLite database, the plugin API moved from
+> `@opencode-ai/plugin` (V1) to `@opencode/plugin` (V2), and checkpoints are now
+> scoped to a session. The published `1.0.1` release is unaffected. See
+> [docs/MIGRATION.md](docs/MIGRATION.md) for the upgrade path.
+
+## Why
+
+OpenCode's own persistence covers the conversation. It does not cover *task
+state*: what you are doing, what is done, what is next, and what is blocking.
+That is what this plugin stores, and it stores it per session so that two
+sessions working in the same repository can never overwrite or inherit each
+other's state.
+
+## Requirements
+
+| Component | Requirement | Verified with |
+|---|---|---|
+| OpenCode | V2 (plugin API `@opencode/plugin` v2) | `opencode` 2.0.21 |
+| Plugin SDK | `@opencode/plugin` 2.x | 2.0.21 (pinned) |
+| SQLite driver | `node:sqlite` — built in to Node ≥ 22.5 and Bun ≥ 1.4 | Node 22.23.2, Bun 1.4.2 |
+| Node (for tests/tooling) | ≥ 22.5 | 22.23.2 |
+
+No native modules are installed, so there is nothing to compile and no ABI to
+match. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the driver decision
+and the evidence behind it.
 
 ## Install
 
@@ -17,97 +41,178 @@ Prevents context loss when switching models or providers during a session. The n
 npm install @gitdamnit/checkpoint-orchestrator
 ```
 
-Then register in your OpenCode config:
+Register it in `opencode.json(c)` — note the V2 key is `plugins`, and each entry
+is a package name or an object with `options`:
 
-```json
+```jsonc
 {
-  "plugin": ["@gitdamnit/checkpoint-orchestrator"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@gitdamnit/checkpoint-orchestrator"]
 }
 ```
 
-Or via CLI:
+With options:
 
-```bash
-opencode plugin @gitdamnit/checkpoint-orchestrator
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "@gitdamnit/checkpoint-orchestrator",
+      "options": {
+        "historyLimit": 20,
+        "autosaveEvery": 5,
+        "handoff": true
+      }
+    }
+  ]
+}
 ```
 
-## Tools Provided
+Local development checkouts are loaded from `.opencode/plugins/`.
+
+## Tools
 
 | Tool | Description |
-|------|-------------|
-| `checkpoint_save` | Save task state — deep-merges fields so partial updates never clobber. Accepts title, objective, status, summary, currentPlan, completedSteps, nextSteps, blockers, filesTouched, notes, and optional `snapshotName` to tag this save. |
-| `checkpoint_load` | Load full current checkpoint state. |
-| `checkpoint_status` | Quick status summary — exists, updatedAt, title, status, step counts, blockers count. |
-| `checkpoint_clear` | Delete the checkpoint file entirely. |
-| `checkpoint_list` | List all snapshot history entries newest-first with name, savedAt, title, and status. |
-| `checkpoint_load_snapshot` | Read-only inspection of a named snapshot's full data. |
-| `checkpoint_restore_snapshot` | Promote a named snapshot to live state. Automatically creates a `pre-restore-{timestamp}` undo point. |
+|---|---|
+| `checkpoint_save` | Save or update this session's state. Fields are deep-merged, so a partial update never clobbers stored data. Optional `snapshotName` tags the save. |
+| `checkpoint_load` | Load this session's full current state. |
+| `checkpoint_status` | Whether a checkpoint exists, when it changed, status, step counts, blocker count, snapshot count, and whether it is a synthesized placeholder. |
+| `checkpoint_clear` | Delete this session's state, snapshots, counters and handoff file. Other sessions are untouched. |
+| `checkpoint_list` | List this session's snapshots newest first, with name, kind, timestamp, title and status. |
+| `checkpoint_load_snapshot` | Read one named snapshot. Read-only. |
+| `checkpoint_restore_snapshot` | Promote a named snapshot to live state; the previous state is kept as a `pre-restore-*` undo snapshot. |
+| `checkpoint_migrate` | Report pre-SQLite JSON data for this project, and optionally adopt it into the calling session. |
 
-## Automatic Persistence
+Every tool takes the calling session from the OpenCode tool context, never from
+the plugin's own working directory, and every query is scoped by session id.
 
-The plugin uses three independent triggers to ensure state is never lost — no agent initiative required:
+## Session isolation
 
-| Trigger | Fires when | Behavior |
+This is the core fix in v2.0.0.
+
+* Each session has exactly one live checkpoint row, keyed by `session_id`.
+* Snapshots, counters and dedup hashes are per session.
+* A session can never read, write, clear, or restore another session's state.
+* Child sessions do **not** inherit a parent's checkpoint. Inheritance, if you
+  want it, is an explicit `checkpoint_migrate --adopt` style operation.
+* Session switching does not reset another session's message counter.
+* Switching model or provider mid-session preserves that session's state
+  because nothing is keyed on the model.
+
+Verified by `tests/isolation.test.js` (2, 5 and 25 concurrent sessions, multiple
+projects, child sessions, concurrent writers, and plugin restart).
+
+## Storage
+
+One SQLite database, outside any working tree:
+
+| Platform | Default location |
+|---|---|
+| Linux | `$XDG_DATA_HOME/opencode/checkpoint-orchestrator/checkpoints.db` (or `~/.local/share/...`) |
+| macOS | `~/Library/Application Support/opencode/checkpoint-orchestrator/checkpoints.db` |
+| Windows | `%APPDATA%\opencode\checkpoint-orchestrator\checkpoints.db` |
+
+Override with the `databasePath` plugin option or the
+`CHECKPOINT_ORCHESTRATOR_DB` environment variable. The database directory is
+created with `0700` and the database file with `0600` permissions.
+
+Tables: `projects`, `sessions`, `checkpoints`, `snapshots`, `session_runtime`,
+`migrations`. The schema is versioned in `PRAGMA user_version` and migrated
+forward in transactions. WAL journaling and a busy timeout are enabled, foreign
+keys are enforced, and all multi-table writes are atomic.
+
+`handoff.md` is no longer authoritative. A derived, per-session
+`handoff-<sessionId>.md` is written under `.opencode/state/` and can be
+regenerated from the database at any time.
+
+## Automatic persistence
+
+Three independent triggers, all session-scoped:
+
+| Trigger | Fires when | Behaviour |
 |---|---|---|
-| **A — `session.compacted`** | Context window fills, OpenCode compacts | Re-saves existing state, or synthesizes a minimal checkpoint if none exists |
-| **B — `chat.message`** | Every 5th user message | Re-saves existing state only (no synthesis). Counter resets on manual save. |
-| **C — `checkpoint_save`** | Agent explicitly calls the tool | Primary save path. Full state from agent, optional `snapshotName`. |
+| **A — context compaction** | OpenCode compacts a session | Persists the session's state and injects it into the compaction request so the summary carries it forward. If nothing was ever saved, records a clearly marked **synthesized placeholder** instead of inventing progress. |
+| **B — periodic** | Every 5th admitted user prompt (`autosaveEvery`) | Persists the session's state. Unchanged state is not rewritten, does not move `updatedAt`, and does not create a snapshot. |
+| **C — explicit** | The agent calls `checkpoint_save` | Primary path. Full or partial state, optional named snapshot. |
 
-Triggers A and B are safety nets. Trigger C is the primary save path.
+Injected context is deduplicated per session by content hash, and synthesized
+placeholders are never injected.
 
-## Automatic Context Injection
+## Plugin options
 
-On session compacting, the plugin automatically injects the checkpoint state into the LLM's context with instructions to continue from where it left off. Deduplication prevents re-injecting unchanged state.
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `databasePath` | string | platform default | Database file location. |
+| `historyLimit` | number | `10` | Snapshots retained per session. The newest `pre-restore` undo snapshot is always retained, even beyond the limit. |
+| `autosaveEvery` | number \| `false` | `5` | User prompts between periodic saves. `false` or `0` disables trigger B. |
+| `handoff` | boolean | `true` | Write the derived per-session handoff file. |
+| `handoffDir` | string | `.opencode/state` | Relative directory for handoff files. Absolute and parent-escaping paths are rejected. |
+| `maxInjectionChars` | number | `20000` | Cap on injected checkpoint JSON. |
+| `legacyImport` | `"namespace"` \| `"off"` | `"namespace"` | Import pre-SQLite JSON into a legacy namespace on startup. |
 
-## Test Suite
+## Upgrading from 1.x
 
-All 979 tests pass on Node.js 18, 20, and 22 in CI.
+1. Install this version.
+2. Change `plugin` to `plugins` in your OpenCode configuration.
+3. Restart OpenCode. On first load, any `.opencode/state/checkpoint.json` is
+   backed up and imported into a clearly named legacy namespace — **not** into
+   any live session.
+4. Run `checkpoint_migrate` to see what was found, then
+   `checkpoint_migrate { "adopt": true }` in the session that should continue
+   that work.
 
-### `tests/checkpoint_smoke.js` — 85 tests, 0 failed
+Old data is never deleted, and the import never runs twice.
 
-Core save/load lifecycle, deep merge, partial updates, status progression, atomic write integrity, handoff generation, ring buffer pruning, snapshot naming, and auto-save counter threshold/reset.
+## V1 support
 
-### `tests/checkpoint_hardening.js` — 77 tests, 0 failed
+Not maintained. This package now targets the V2 plugin API only, and a single
+implementation cannot serve both APIs safely for session-scoped storage because
+V1 has no per-session tool context. V1 users should stay on the `1.0.1` release
+line or upgrade OpenCode. Details in
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
-| Category | Tests | Coverage |
-|----------|-------|----------|
-| Security | 4 | Prototype pollution via `__proto__`, `constructor.prototype`, nested `__proto__`, and array payloads |
-| Markdown injection | 5 | Script tags, code fences, image/link syntax all escaped |
-| Fuzz | 8 | String/number/boolean/array/null/undefined incoming types |
-| Stress | 9 | 100 rapid merges, ring buffer at limits, all-fields-max payload |
-| Edge cases | 11 | Double merges, all 4 status transitions, empty state, special chars, multiline, TOCTOU, missing version, missing directory |
-| Atomic integrity | 4 | Temp file uniqueness, valid output, partial crash recovery |
-| Handoff | 30 | All field fallbacks, nullish input, version checks, emoji prefixes, long content |
+## Development
 
-### `tests/checkpoint_comprehensive.js` — 817 tests, 0 failed
+```bash
+npm ci
+npm run lint
+npm run typecheck
+npm run build
+npm test              # source-level suites (node:test)
+npm run test:legacy   # the pre-2.0 suites, kept for reference
+npm run test:opencode # verifies packaging, and probes a real OpenCode runtime
+```
 
-| Section | Tests | Coverage |
-|---------|-------|----------|
-| Part 1 — Property Fuzz | ~600 (100 iters × 6 asserts) | Random titles, statuses, summaries, plans — verifies deep merge stability under random input combinations |
-| Part 2 — Filesystem Lifecycle | 13 | Full create → save → load → handoff → clear cycle across 5 sequential saves |
-| Part 3 — Recovery & Resilience | 11 | Corrupted JSON, corrupted history, missing directory with auto-mkdir, empty state file, missing handoff regeneration, mid-write crash survival |
-| Part 4 — Atomic Write Verification | 5 | 50 rapid temp-file writes with unique naming, zero leftover temp files, large payload (10KB fields, 500-item arrays) data completeness |
-| Part 5 — Ring Buffer History | 19 | Exact boundary (10 entries), overflow pruning, empty/single edge cases, named vs auto snapshots, newest-first ordering |
-| Part 6 — Deep Merge Combinatorial | 32 | All 16 status transitions, all 10 field types, partial field preservation, empty strings, null values, 3-step chained merges |
-| Part 7 — Sanitization | 21 | 6 XSS vectors (script, img, anchor, angle brackets, quotes), undefined/null/number/non-angle inputs, array sanitization, unicode (7 languages/charsets), full handoff injection context |
-| Part 8 — Clamp Boundaries | 20 | String input: undefined/null/number/empty/exact/+1/way-over/max/max+1. Array: undefined/null/not-array/empty/exact/+1/way-over/max/max+1 |
-| Part 9 — Schema Versioning | 13 | Current version detection, v1 migration, v0 handling, missing version field, forward compatibility |
-| Part 10 — Timestamp & Format | 6 | ISO 8601 format, Z/offset suffix, valid Date parsing, recency (within 5s), not in future |
-| Part 11 — Stress | 10 | 1000 rapid deep merges with title/step/note accumulation, 200 file saves with ring buffer verification, zero temp file leaks |
-| Part 12 — Security | 8 | 4 prototype pollution variants (`__proto__`, `constructor.prototype`, nested, array), 100K-element DoS, deeply nested payloads, injection in all handoff contexts |
-| Part 13 — Snapshot Operations | 5 | Find by name, unknown name, pre-restore undo point creation |
-| Part 14 — Handoff Structure | 30 | All 10 markdown sections present, correct numbering/counts, 10 empty-field fallback strings |
-| Part 15 — Checkpoint Clear | 5 | All 3 files deleted, graceful handling when no files exist |
+`tests/` exercises the built output in `dist/`, not a reimplementation. It
+covers the SQLite driver, the store, the session-scoped service, isolation,
+legacy migration and the real V2 plugin wiring (tools, hooks, events, cleanup).
 
-## Architecture & Storage
+To dogfood a local build before publishing, link it into the project you are
+working in and restart OpenCode:
 
-- **Storage Location:** `.opencode/state/`
-  - `checkpoint.json` — current live state (atomic write: temp + rename)
-  - `checkpoint-history.json` — ring buffer of last 10 snapshots (atomic write)
-  - `handoff.md` — human-readable markdown mirror of live state (plain write, derived)
-- **Atomic Writes:** Primary state files write to a temp file first, then rename to final path — prevents corruption on crash or power loss.
-- **Deep Merge:** Saving merges `task` fields individually rather than overwriting. You can save `title` in one call and `status` in another without losing data.
-- **Deduplication:** The session compacting hook tracks state hashes to avoid injecting the same context multiple times.
-- **Ring Buffer History:** Every save appends a copy to `checkpoint-history.json`. History is pruned to `MAX_HISTORY` (default: 10) automatically — oldest entries fall off.
-- **Schema Versioning:** Checkpoint data files include a version field for forward compatibility. Old files load with a warning rather than breaking.
-- **Handoff File:** `handoff.md` is generated on every write in markdown format readable by any tool — aider, Claude Code, Codex CLI, or a text editor.
+```bash
+mkdir -p .opencode/plugins
+ln -sf "$PWD/dist/checkpoint-orchestrator.js" .opencode/plugins/checkpoint-orchestrator.js
+```
+
+`docs/RUNTIME-VERIFICATION.md` records what has been verified against a real
+OpenCode 2.0.21 / Bun 1.4.2 runtime, including the host behaviours that affect
+plugin loading.
+
+## Known limitations
+
+* `node:sqlite` is still marked experimental in Node, so a warning is printed
+  under plain Node. Bun's implementation (the runtime OpenCode uses) does not
+  warn.
+* A synthesized placeholder is created only when compaction happens with no
+  prior checkpoint. Later real state replaces it.
+* Two processes configured with different `historyLimit` values will prune to
+  their own limits; the last writer's limit wins for that session.
+* `checkpoint_clear` intentionally does not delete sibling sessions' data. There
+  is no "clear everything" tool.
+* Session deletion in OpenCode does not delete stored checkpoints: they are kept
+  so that no committed state is lost silently.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
