@@ -5,7 +5,7 @@
  */
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -280,13 +280,85 @@ test("adoption copies legacy state into the calling session and is recorded", ()
   }
 })
 
-test("adoption without a legacy live checkpoint is refused with a reason", () => {
-  const ctx = legacyProject({ checkpointRaw: JSON.stringify({ version: 2, updatedAt: "2026-01-01T00:00:00.000Z" }) })
+test("a payload that is not this plugin's data is reported, never imported or migrated", () => {
+  const ctx = legacyProject()
   try {
-    // Overwrite with a payload that normalizes to an empty task set.
-    writeFileSync(ctx.checkpointPath, JSON.stringify({}))
+    // Someone else owns a file at the conventional legacy path.
+    writeFileSync(ctx.checkpointPath, JSON.stringify({ otherPlugin: true, entries: [1, 2, 3] }))
+    writeFileSync(ctx.historyPath, JSON.stringify({ snapshots: [{ name: "theirs", data: { otherPlugin: true } }] }))
+
+    const result = ctx.service.importLegacy(ctx.active, true)
+    assert.equal(result.imported, false)
+    assert.equal(result.reason, "unrecognized-legacy-state")
+    assert.equal(result.warnings.length, 2)
+    assert.match(result.warnings[0], /does not match the checkpoint-orchestrator schema/)
+
+    // Nothing was imported, nothing was written, and the foreign files are intact.
+    assert.equal(ctx.store.loadCheckpoint(legacySessionId("proj-1")), null)
+    assert.equal(ctx.store.listSessionIds().length, 0)
+    assert.equal(readFileSync(ctx.checkpointPath, "utf8"), JSON.stringify({ otherPlugin: true, entries: [1, 2, 3] }))
+    assert.equal(readFileSync(ctx.historyPath, "utf8"), JSON.stringify({ snapshots: [{ name: "theirs", data: { otherPlugin: true } }] }))
+
+    // Reporting surfaces it too, and adoption refuses with the same reason.
+    const report = ctx.service.adoptLegacy(ctx.active, false)
+    assert.equal(report.legacyPresent, true)
+    assert.ok(report.warnings.some((warning) => /not checkpoint-orchestrator data/.test(warning)))
     const adoption = ctx.service.adoptLegacy(ctx.active, true)
-    assert.equal(adoption.adopted, true, "an empty payload still normalizes to a valid, if empty, checkpoint")
+    assert.equal(adoption.adopted, false)
+    assert.equal(adoption.reason, "unrecognized-legacy-state")
+  } finally {
+    ctx.cleanup()
+  }
+})
+
+test("a foreign file at the legacy path does not block importing our own data later", () => {
+  const ctx = legacyProject()
+  try {
+    writeFileSync(ctx.checkpointPath, JSON.stringify({ otherPlugin: true }))
+    writeFileSync(ctx.historyPath, JSON.stringify({ snapshots: [{ name: "theirs", data: { otherPlugin: true } }] }))
+    assert.equal(ctx.service.importLegacy(ctx.active, true).reason, "unrecognized-legacy-state")
+
+    // The ledger must NOT have been written, so a genuine file still imports.
+    writeFileSync(
+      ctx.checkpointPath,
+      JSON.stringify({ version: 2, updatedAt: "2026-05-13T16:48:16.000Z", task: { title: "ours" }, nextSteps: ["x"] }),
+    )
+    const second = ctx.service.importLegacy(ctx.active, true)
+    assert.equal(second.imported, true)
+    assert.equal(ctx.store.loadCheckpoint(legacySessionId("proj-1")).data.task.title, "ours")
+  } finally {
+    ctx.cleanup()
+  }
+})
+
+test("legacy backup copies are written into this plugin's namespace, not beside the originals", () => {
+  const ctx = legacyProject()
+  try {
+    const result = ctx.service.importLegacy(ctx.active, true)
+    assert.equal(result.imported, true)
+    assert.ok(result.backedUp.length >= 2)
+    for (const backup of result.backedUp) {
+      assert.ok(
+        backup.includes("/.opencode/state/checkpoint-orchestrator/legacy-backup/"),
+        `backup escaped the plugin namespace: ${backup}`,
+      )
+      assert.equal(existsSync(backup), true)
+    }
+    // The shared directory keeps only the original files plus our own namespace.
+    const shared = readdirSync(ctx.stateDir)
+    assert.deepEqual(shared.sort(), ["checkpoint-history.json", "checkpoint-orchestrator", "checkpoint.json", "handoff.md"])
+  } finally {
+    ctx.cleanup()
+  }
+})
+
+test("adoption without a live checkpoint in our own schema is refused with a reason", () => {
+  const ctx = legacyProject()
+  try {
+    // A file that parses and matches our schema but carries no task state.
+    writeFileSync(ctx.checkpointPath, JSON.stringify({ version: 2, updatedAt: "2026-01-01T00:00:00.000Z", notes: [] }))
+    const adoption = ctx.service.adoptLegacy(ctx.active, true)
+    assert.equal(adoption.adopted, true, "an empty-but-ours payload still normalizes to a valid, if empty, checkpoint")
   } finally {
     ctx.cleanup()
   }

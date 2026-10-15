@@ -16,7 +16,7 @@ import {
   sanitizeForMarkdown,
 } from "../dist/core/util.js"
 import { defaultDataRoot, resolveDatabasePath } from "../dist/core/paths.js"
-import { handoffFilePath, renderHandoff } from "../dist/core/handoff.js"
+import { HANDOFF_DIR, handoffFilePath, renderHandoff } from "../dist/core/handoff.js"
 
 test("deepMerge: partial update preserves every stored field", () => {
   const first = deepMerge(null, {
@@ -212,17 +212,19 @@ test("handoff rendering contains every documented section", () => {
   assert.ok(markdown.includes("Do not edit manually"))
 })
 
-test("handoff export paths are per-session and cannot escape the state directory", () => {
+test("handoff export paths are per-session, namespaced, and cannot escape their directory", () => {
+  const dir = HANDOFF_DIR
   const a = handoffFilePath("/proj", "ses_aaa")
   const b = handoffFilePath("/proj", "ses_bbb")
   assert.notEqual(a, b)
-  assert.equal(a, "/proj/.opencode/state/handoff-ses_aaa.md")
+  assert.equal(a, "/proj/.opencode/state/checkpoint-orchestrator/handoff-ses_aaa.md")
+  assert.equal(dir, ".opencode/state/checkpoint-orchestrator", "exports live in this plugin's own namespace")
 
   // Containment is the real invariant: whatever the session id contains, the
   // export always stays directly inside the session's state directory.
   for (const hostile of ["../../etc/passwd", "..", "/", "a/../../b", "\u0000null"]) {
     const resolved = handoffFilePath("/proj", hostile)
-    assert.equal(dirname(resolved), "/proj/.opencode/state", `escaped via ${hostile}`)
+    assert.equal(dirname(resolved), "/proj/.opencode/state/checkpoint-orchestrator", `escaped via ${hostile}`)
     assert.ok(basename(resolved).startsWith("handoff-"), `bad filename for ${hostile}`)
     assert.notEqual(basename(resolved), "..")
   }
