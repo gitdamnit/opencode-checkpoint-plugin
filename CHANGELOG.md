@@ -28,7 +28,8 @@ change to the session-isolation contract.
 - **Concurrent legacy imports import exactly once.** The ledger check sat outside
   the write transaction, so two processes starting together could both import and
   duplicate the legacy snapshots. The check is now repeated inside the
-  transaction; only the first committer imports.
+  transaction; only the first committer imports, and the backup copy is taken
+  only once the import is claimed, so a losing racer writes nothing.
 
 ### Changed
 - `engines.node` raised from `>=22.5.0` to `>=22.13.0`. `node:sqlite` is only
