@@ -17,6 +17,27 @@ Evidence that this plugin works in a **real OpenCode V2 runtime**, not just unde
 The CLI is a Bun single-file executable, which is why `node:sqlite` availability
 was checked in *that* runtime rather than only in Node.
 
+## Docker Plugin Test Lab
+
+The separate lab ran this plugin, staged → packed → installed from commit
+`bedc14b` (`2.0.0-dev.1`, clean worktree), in rootless Docker with a disposable
+project and an offline mock provider. Result: **145/145** lab checks across
+runtime loading (5 configs), functional tests, the model-request path,
+combined-compatibility, the 6-load-order matrix plus a duplicate, security,
+concurrency/crash consistency, failure isolation, and the live automatic-trigger
+suites. All eight tools registered alone, with either sibling, and with all three
+installed together. Its own copy of this repository's suites also ran inside the
+image: **83/83** (`isolation` + `legacy` = 29; `store` + `service` + `unit` = 54).
+`plugin.test.js` and `interop.test.js` were not run there because they resolve
+`@opencode/plugin` from a full workspace; the lab's runtime/matrix/trigger suites
+cover their subject matter, and both run in this repository (30 tests).
+
+The lab's reports were not modified by this repository; see the lab's
+`reports/rc-verification.md` and `reports/rc-upstream-tests.md`. The hardening in
+`2.0.0-dev.2` changes storage internals only (migration, project identity,
+first-open and legacy-import concurrency), which the matrix and tool-registration
+checks do not exercise.
+
 ## What was checked, and how
 
 ### 1. Packaging
@@ -27,7 +48,7 @@ was checked in *that* runtime rather than only in Node.
 PASS  npm pack produces a tarball
 PASS  tarball ships the built entry point   (package/dist/checkpoint-orchestrator.js)
 PASS  tarball contains no database, node_modules or tests
-PASS  installed package version 2.0.0-dev.0
+PASS  installed package version 2.0.0-dev.1
 ```
 
 The tarball was installed into a clean throwaway project, so the artifact under

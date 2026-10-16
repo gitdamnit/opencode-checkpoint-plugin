@@ -8,8 +8,12 @@
 /** Version of the serialized checkpoint payload (`CheckpointData.version`). */
 export const PAYLOAD_SCHEMA_VERSION = 3
 
-/** Version of the SQLite schema, tracked in `PRAGMA user_version`. */
-export const DB_SCHEMA_VERSION = 1
+/**
+ * Version of the SQLite schema, tracked in `PRAGMA user_version`.
+ * `LATEST_SCHEMA_VERSION` in `schema.ts` is derived from the migration list and
+ * is authoritative; a unit test asserts the two agree so they cannot drift.
+ */
+export const DB_SCHEMA_VERSION = 2
 
 export const STATUSES = ["not_started", "in_progress", "blocked", "done"] as const
 

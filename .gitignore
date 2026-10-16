@@ -140,6 +140,7 @@ vite.config.ts.timestamp-*
 # Checkpoint Orchestrator runtime state (never commit user data)
 .opencode/state/
 .opencode/state/**
+.opencode/plugins/
 checkpoints.db
 checkpoints.db-wal
 checkpoints.db-shm

@@ -28,8 +28,13 @@ other's state.
 |---|---|---|
 | OpenCode | V2 (plugin API `@opencode/plugin` v2) | `opencode` 2.0.21 |
 | Plugin SDK | `@opencode/plugin` 2.x | 2.0.21 (pinned) |
-| SQLite driver | `node:sqlite` — built in to Node ≥ 22.5 and Bun ≥ 1.4 | Node 22.23.2, Bun 1.4.2 |
-| Node (for tests/tooling) | ≥ 22.5 | 22.23.2 |
+| SQLite driver | `node:sqlite` — built in to Node ≥ 22.13 and Bun ≥ 1.4 | Node 22.23.2, Bun 1.4.2 |
+| Node (for tests/tooling) | ≥ 22.13 | 22.23.2 |
+
+`node:sqlite` exists from Node 22.5, but only from **22.13.0 / 23.4.0** is it
+available without `--experimental-sqlite`, which is why that is the floor in
+`engines.node`. An older runtime needs the flag; it cannot run the storage layer
+as-is. See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 No native modules are installed, so there is nothing to compile and no ABI to
 match. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the driver decision
@@ -118,8 +123,41 @@ created with `0700` and the database file with `0600` permissions.
 
 Tables: `projects`, `sessions`, `checkpoints`, `snapshots`, `session_runtime`,
 `migrations`. The schema is versioned in `PRAGMA user_version` and migrated
-forward in transactions. WAL journaling and a busy timeout are enabled, foreign
-keys are enforced, and all multi-table writes are atomic.
+forward — the whole upgrade runs in one `BEGIN IMMEDIATE` transaction that
+re-reads the version after taking the write lock, so several processes may open a
+brand-new database at the same instant without racing `CREATE TABLE`. WAL
+journaling and a busy timeout are enabled, foreign keys are enforced, and all
+multi-table writes are atomic.
+
+### Backup and recovery
+
+The database is a normal SQLite file; copy it while a writer is idle, or use
+SQLite's own API rather than a raw file copy of a live WAL database:
+
+```bash
+# Consistent snapshot without stopping OpenCode (Node ≥ 22.13):
+node -e '
+  const { DatabaseSync } = require("node:sqlite")
+  const src = new DatabaseSync(process.env.HOME + "/.local/share/opencode/checkpoint-orchestrator/checkpoints.db")
+  src.backup("checkpoints.backup.db").then(() => { src.close(); console.log("backup written") })
+'
+```
+
+The `-wal` and `-shm` files are part of the database: never copy `checkpoints.db`
+alone while it is in use. Recovery options, in order of preference:
+
+1. `checkpoint_load_snapshot` / `checkpoint_restore_snapshot` — per-session undo
+   straight from the live database. A restore first captures the current state as
+   a `pre-restore-<timestamp>` snapshot, and pruning always retains the newest one.
+2. Restore a `checkpoints.backup.db` file over the live database while OpenCode is
+   stopped.
+3. `PRAGMA integrity_check` / `PRAGMA foreign_key_check` report corruption; the
+   plugin only logs the result and never rewrites the file.
+
+An unknown *newer* `user_version` is refused rather than used, so a database
+written by a future release is never silently downgraded. Git That Shit
+intentionally excludes live `.sqlite`/`.db`/`-wal`/`-shm` files, so the backup
+above (or the handoff export) is the supported way to carry state off the machine.
 
 `handoff.md` is no longer authoritative. A derived, per-session
 `handoff-<sessionId>.md` is written under
@@ -200,14 +238,23 @@ npm ci
 npm run lint
 npm run typecheck
 npm run build
-npm test              # source-level suites (node:test)
-npm run test:legacy   # the pre-2.0 suites, kept for reference
+npm test              # source-level suites (node:test) — 119 tests
+npm run test:legacy   # the pre-2.0 V1 suites, kept as a reference
+npm run test:all      # both together
 npm run test:opencode # verifies packaging, and probes a real OpenCode runtime
 ```
 
 `tests/` exercises the built output in `dist/`, not a reimplementation. It
 covers the SQLite driver, the store, the session-scoped service, isolation,
 legacy migration and the real V2 plugin wiring (tools, hooks, events, cleanup).
+
+> **On the test counts.** `npm test` (119 tests) is the coverage of *this* code:
+> every suite imports the compiled `dist/` output or drives the real plugin entry
+> point. `npm run test:legacy` runs the historical 979 V1 assertions, which
+> re-implement the old JSON logic inside the test files and therefore pass without
+> exercising the shipped plugin. They are kept as a V1 behaviour reference, not as
+> evidence about the release; the combined figure (1,098) is only meaningful as
+> "both suites were executed".
 
 To dogfood a local build before publishing, link it into the project you are
 working in and restart OpenCode:
@@ -225,20 +272,30 @@ plugin loading.
 
 * `node:sqlite` is still marked experimental in Node, so a warning is printed
   under plain Node. Bun's implementation (the runtime OpenCode uses) does not
-  warn.
+  warn. It is unflagged from Node 22.13.0 / 23.4.0.
 * A synthesized placeholder is created only when compaction happens with no
   prior checkpoint. Later real state replaces it.
 * Two processes configured with different `historyLimit` values will prune to
   their own limits; the last writer's limit wins for that session.
 * `checkpoint_clear` intentionally does not delete sibling sessions' data. There
   is no "clear everything" tool.
+* After `checkpoint_clear`, a later compaction records a new **synthesized
+  placeholder** — clearly marked, and never injected into the summary — because
+  the plugin cannot distinguish "cleared" from "never saved" without keeping a
+  tombstone. It contains no task progress.
 * Session deletion in OpenCode does not delete stored checkpoints: they are kept
   so that no committed state is lost silently.
+* If a host reports two project ids for the same canonical directory, each id
+  keeps its own session rows. Storage stays usable (migration 2 removed the
+  `UNIQUE(directory)` constraint), but legacy JSON in that directory is imported
+  once per project id, into separate `legacy::<projectID>` namespaces.
 * Independence guarantees, the test matrix, and behaviour with companion plugins
   absent or failing are documented in
-  [docs/INDEPENDENCE.md](docs/INDEPENDENCE.md). The other two toolkit plugins were
-  not available in this development environment and have **not** been tested
-  together with this one; a stand-in plugin covers the same host contracts.
+  [docs/INDEPENDENCE.md](docs/INDEPENDENCE.md). A Docker Plugin Test Lab run
+  against this development line registered all eight checkpoint tools alone, with
+  each sibling plugin, and with all three installed together, in every load
+  order; see [docs/RUNTIME-VERIFICATION.md](docs/RUNTIME-VERIFICATION.md) for the
+  exact commit that was measured.
 
 ## License
 

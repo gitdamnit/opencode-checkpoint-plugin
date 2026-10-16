@@ -174,21 +174,28 @@ export class CheckpointStore {
   }
 
   private applyMigrations(): void {
-    let current = this.schemaVersion
-    for (const migration of MIGRATIONS) {
-      if (migration.version <= current) continue
-      this.transaction(() => {
+    // The entire upgrade runs inside one BEGIN IMMEDIATE transaction that
+    // re-reads `user_version` after acquiring the write lock. Two processes
+    // opening a brand-new database at the same instant both observe version 0
+    // before either commits; without the in-transaction re-read the loser
+    // replays `CREATE TABLE` and dies with "table projects already exists",
+    // leaving the plugin inert. Doing the whole run in one transaction also
+    // means a multi-step upgrade is all-or-nothing.
+    this.transaction(() => {
+      let current = this.schemaVersion
+      for (const migration of MIGRATIONS) {
+        if (migration.version <= current) continue
         for (const statement of migration.statements) this.db.exec(statement)
         this.db.exec(`PRAGMA user_version = ${migration.version}`)
-      })
-      current = migration.version
-    }
-    if (current !== LATEST_SCHEMA_VERSION) {
-      throw new Error(
-        `Checkpoint database schema is v${current} but this build expects v${LATEST_SCHEMA_VERSION}. ` +
-          `Refusing to run with an incompatible database: ${this.dbPath}`,
-      )
-    }
+        current = migration.version
+      }
+      if (current !== LATEST_SCHEMA_VERSION) {
+        throw new Error(
+          `Checkpoint database schema is v${current} but this build expects v${LATEST_SCHEMA_VERSION}. ` +
+            `Refusing to run with an incompatible database: ${this.dbPath}`,
+        )
+      }
+    })
   }
 
   // ---------------------------------------------------------------- integrity
@@ -303,8 +310,27 @@ export class CheckpointStore {
   }
 
   ensureSession(ref: SessionRef): void {
-    const at = nowIso()
     this.ensureProject(ref.projectID, ref.projectDirectory)
+    this.upsertSession(ref)
+  }
+
+  /**
+   * Record a project when the caller knows its id but not its directory. This
+   * must never overwrite a directory an authoritative caller already stored, so
+   * it only stubs the row in (the id doubles as a placeholder directory) and a
+   * later `ensureProject` fills in the real value.
+   */
+  private ensureProjectPlaceholder(projectID: string): void {
+    const at = nowIso()
+    this.prepare(
+      `INSERT INTO projects (id, directory, canonical, created_at, updated_at)
+       VALUES (?, ?, NULL, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+    ).run(nz(projectID), nz(projectID), nz(at), nz(at))
+  }
+
+  private upsertSession(ref: SessionRef): void {
+    const at = nowIso()
     this.prepare(
       `INSERT INTO sessions (id, project_id, parent_id, title, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -432,7 +458,8 @@ export class CheckpointStore {
   private ensureSessionIfMissing(sessionID: string, projectID: string): void {
     const existing = this.getSession(sessionID)
     if (existing) return
-    this.ensureSession({ sessionID, projectID, projectDirectory: projectID })
+    this.ensureProjectPlaceholder(projectID)
+    this.upsertSession({ sessionID, projectID, projectDirectory: projectID })
   }
 
   clearSession(sessionID: string): ClearResult {
