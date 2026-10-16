@@ -42,7 +42,9 @@ change to the session-isolation contract.
 - Regression tests for each fix: concurrent first-open with six processes,
   concurrent legacy import with six processes, migration from a real v1 schema
   with existing rows, duplicate project ids for one directory, write-path
-  directory preservation, and a schema-version/migration-list consistency guard.
+  directory preservation, a schema-version/migration-list consistency guard, and
+  a damaged or foreign file at the database path being refused rather than
+  silently answered as "no checkpoint".
 - `tests/fixtures/importer.mjs` and `tests/fixtures/schema-open.mjs`.
 
 ### Notes
@@ -50,7 +52,7 @@ change to the session-isolation contract.
 - The 979 "legacy" tests are V1-algorithm conformance tests that re-implement the
   old logic in-file; they do not import the shipped plugin. They are kept as a V1
   reference under `npm run test:legacy`, but they are not coverage of this code —
-  `npm test` (119 tests) is.
+  `npm test` (120 tests) is.
 
 ## [2.0.0-dev.1] — 2026-10-15
 

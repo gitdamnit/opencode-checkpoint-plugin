@@ -238,7 +238,7 @@ npm ci
 npm run lint
 npm run typecheck
 npm run build
-npm test              # source-level suites (node:test) — 119 tests
+npm test              # source-level suites (node:test) — 120 tests
 npm run test:legacy   # the pre-2.0 V1 suites, kept as a reference
 npm run test:all      # both together
 npm run test:opencode # verifies packaging, and probes a real OpenCode runtime
@@ -248,12 +248,12 @@ npm run test:opencode # verifies packaging, and probes a real OpenCode runtime
 covers the SQLite driver, the store, the session-scoped service, isolation,
 legacy migration and the real V2 plugin wiring (tools, hooks, events, cleanup).
 
-> **On the test counts.** `npm test` (119 tests) is the coverage of *this* code:
+> **On the test counts.** `npm test` (120 tests) is the coverage of *this* code:
 > every suite imports the compiled `dist/` output or drives the real plugin entry
 > point. `npm run test:legacy` runs the historical 979 V1 assertions, which
 > re-implement the old JSON logic inside the test files and therefore pass without
 > exercising the shipped plugin. They are kept as a V1 behaviour reference, not as
-> evidence about the release; the combined figure (1,098) is only meaningful as
+> evidence about the release; the combined figure (1,099) is only meaningful as
 > "both suites were executed".
 
 To dogfood a local build before publishing, link it into the project you are
