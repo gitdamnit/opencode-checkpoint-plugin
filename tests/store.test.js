@@ -501,6 +501,19 @@ test("a malformed session id fails loudly instead of silently matching nothing",
   }
 })
 
+test("a file that is not a database is refused instead of silently used", () => {
+  const { dir, dbPath } = scratch()
+  try {
+    // A damaged or foreign file at the database path must surface as an error
+    // the plugin can report and stay inert on, never as an empty store that
+    // silently answers "no checkpoint".
+    writeFileSync(dbPath, Buffer.alloc(4096, 0x41))
+    assert.throws(() => new CheckpointStore(dbPath), /not a database|malformed|malformed image|encrypted/i)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test("the declared schema version and the migration list cannot drift", () => {
   assert.equal(DB_SCHEMA_VERSION, LATEST_SCHEMA_VERSION)
   assert.deepEqual(
