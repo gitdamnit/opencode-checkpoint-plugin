@@ -179,7 +179,6 @@ export function importLegacyState(store, options) {
         };
     }
     const stamp = options.stamp ?? new Date().toISOString().replace(/[:.]/g, "-");
-    const backedUp = backupLegacyFiles(options.projectDirectory, stamp);
     const sessionID = legacySessionId(options.projectID);
     const ref = {
         sessionID,
@@ -187,13 +186,15 @@ export function importLegacyState(store, options) {
         projectDirectory: options.projectDirectory,
         title: "Legacy project-level checkpoint (imported)",
     };
-    const imported = store.transaction(() => {
+    const outcome = store.transaction(() => {
         // Re-check inside the write transaction. The fast-path check above happens
         // before the write lock, so two processes starting at the same instant both
         // pass it; only the one that commits first may import, and the other must
-        // not duplicate the snapshots.
+        // not duplicate the snapshots. The backup runs after this check so a losing
+        // racer cannot create a redundant copy of files it did not import.
         if (store.hasMigration(ledgerId))
-            return false;
+            return { imported: false, backedUp: [] };
+        const backedUp = backupLegacyFiles(options.projectDirectory, stamp);
         store.ensureSession(ref);
         if (state.checkpoint) {
             store.saveCheckpoint({
@@ -234,16 +235,16 @@ export function importLegacyState(store, options) {
             backedUp,
             warnings: [...state.unreadable, ...foreignWarnings],
         });
-        return true;
+        return { imported: true, backedUp };
     });
-    if (!imported) {
+    if (!outcome.imported) {
         return { imported: false, reason: "already-imported", snapshotCount: 0, backedUp: [], warnings: [] };
     }
     return {
         imported: true,
         reason: "imported",
         snapshotCount: state.snapshots.length,
-        backedUp,
+        backedUp: outcome.backedUp,
         warnings: [...state.unreadable, ...foreignWarnings],
     };
 }
