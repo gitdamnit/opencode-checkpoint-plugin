@@ -1,6 +1,6 @@
 {
   "name": "@gitdamnit/checkpoint-orchestrator",
-  "version": "2.0.0-dev.1",
+  "version": "2.0.0-dev.2",
   "description": "Failure-resilient, session-isolated checkpointing for OpenCode — SQLite-backed task state and resumable AI workflows",
   "repository": {
     "type": "git",
@@ -9,7 +9,7 @@
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.13.0"
   },
   "main": "dist/checkpoint-orchestrator.js",
   "exports": {
@@ -29,6 +29,7 @@
     "lint": "eslint plugins/ tests/ tests/integration",
     "pretest": "npm run build",
     "test": "node --test tests/*.test.js",
+    "test:all": "npm test && npm run test:legacy",
     "test:legacy": "node tests/legacy/checkpoint_smoke.js && node tests/legacy/checkpoint_hardening.js && node tests/legacy/checkpoint_comprehensive.js",
     "test:opencode": "node tests/integration/opencode-runtime.mjs",
     "verify": "npm run lint && npm run typecheck && npm run build && npm test",

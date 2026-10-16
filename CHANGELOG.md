@@ -1,5 +1,57 @@
 # Changelog
 
+## [2.0.0-dev.2] — 2026-10-15
+
+Persistence-integrity hardening found by the final SQLite audit. No tool-surface
+change, no storage-format change beyond a forward-only schema migration, and no
+change to the session-isolation contract.
+
+### Fixed
+- **Concurrent first-open of a new database no longer crashes.** Schema creation
+  read `PRAGMA user_version` before taking the write lock, so several processes
+  opening the same brand-new database at once all saw version 0 and all replayed
+  `CREATE TABLE`. The loser died with `table projects already exists`, leaving that
+  plugin instance permanently inert (`Checkpoint storage unavailable`). The whole
+  upgrade now runs in one `BEGIN IMMEDIATE` transaction that re-reads the version
+  after acquiring the lock, which also makes a multi-step upgrade all-or-nothing.
+- **Two project ids may share one directory again.** `projects.directory` was
+  `UNIQUE`, so a host reporting a second project id for the same canonical
+  directory (a checkout plus a worktree of it, or a moved repository) made every
+  write fail with `UNIQUE constraint failed: projects.directory`. Migration 2
+  replaces the unique index with a plain one; the directory is metadata, and
+  project identity is the id.
+- **A write path can no longer overwrite the authoritative project directory.**
+  When only the project id was known, the store recorded a placeholder row whose
+  upsert rewrote the real `directory` with the project id string. The placeholder
+  now never touches `directory`/`canonical`, and an authoritative `ensureSession`
+  fills in the real value afterwards.
+- **Concurrent legacy imports import exactly once.** The ledger check sat outside
+  the write transaction, so two processes starting together could both import and
+  duplicate the legacy snapshots. The check is now repeated inside the
+  transaction; only the first committer imports.
+
+### Changed
+- `engines.node` raised from `>=22.5.0` to `>=22.13.0`. `node:sqlite` is only
+  available without `--experimental-sqlite` from Node 22.13.0 / 23.4.0, so the
+  previous floor claimed support for versions that cannot execute the storage
+  layer.
+- `npm run test:all` added: runs the source-level suites and the historical V1
+  suites together, so the combined count is reproducible rather than implied.
+
+### Added
+- Regression tests for each fix: concurrent first-open with six processes,
+  concurrent legacy import with six processes, migration from a real v1 schema
+  with existing rows, duplicate project ids for one directory, write-path
+  directory preservation, and a schema-version/migration-list consistency guard.
+- `tests/fixtures/importer.mjs` and `tests/fixtures/schema-open.mjs`.
+
+### Notes
+- `checkpoint-orchestrator/handoff@1` and the seven preserved tools are unchanged.
+- The 979 "legacy" tests are V1-algorithm conformance tests that re-implement the
+  old logic in-file; they do not import the shipped plugin. They are kept as a V1
+  reference under `npm run test:legacy`, but they are not coverage of this code —
+  `npm test` (119 tests) is.
+
 ## [2.0.0-dev.1] — 2026-10-15
 
 Independence and interoperability hardening. No change to the storage contract.

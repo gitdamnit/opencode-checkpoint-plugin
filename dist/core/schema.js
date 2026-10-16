@@ -80,6 +80,19 @@ export const MIGRATIONS = [
        )`,
         ],
     },
+    {
+        version: 2,
+        statements: [
+            // Project identity is the `id`, not the directory. A host can hand two
+            // project ids the same canonical directory — a checkout plus a worktree of
+            // it, or a repository that moved — and the UNIQUE(directory) index turned
+            // that into a hard `UNIQUE constraint failed: projects.directory` on every
+            // write path, making storage unusable for those sessions. The directory is
+            // metadata here; keep it indexed for lookups, but not unique.
+            `DROP INDEX IF EXISTS idx_projects_directory`,
+            `CREATE INDEX idx_projects_directory ON projects(directory)`,
+        ],
+    },
 ];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.reduce((max, m) => Math.max(max, m.version), 0);
 /** Statements applied to every connection regardless of schema version. */

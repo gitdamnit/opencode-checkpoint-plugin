@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { CheckpointStore } from "../dist/core/store.js"
 import { CheckpointService, DEFAULT_SERVICE_OPTIONS } from "../dist/core/service.js"
 import { handoffFilePath } from "../dist/core/handoff.js"
+import { LATEST_SCHEMA_VERSION } from "../dist/core/schema.js"
 
 function setup(serviceOptions = {}, storeOptions = {}) {
   const dir = mkdtempSync(join(tmpdir(), "co-svc-"))
@@ -356,7 +357,7 @@ test("diagnostics expose driver, schema and health information", () => {
     assert.equal(diagnostics.journalMode, "wal")
     assert.equal(diagnostics.integrity, "ok")
     assert.equal(diagnostics.foreignKeyViolations, 0)
-    assert.equal(diagnostics.schemaVersion, 1)
+    assert.equal(diagnostics.schemaVersion, LATEST_SCHEMA_VERSION)
     assert.ok(diagnostics.databasePath.endsWith("checkpoints.db"))
   } finally {
     ctx.cleanup()

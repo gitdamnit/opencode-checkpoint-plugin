@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # node:sqlite requires Node >= 22.5.
+        # node:sqlite is only unflagged from Node 22.13 / 23.4.
         node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +25,10 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      # The historical 979 V1 assertions. They re-implement the old JSON logic
+      # instead of importing the build, so they are a V1 reference, not coverage
+      # of this code; run them so the combined count is reproducible in CI.
+      - run: npm run test:legacy
 
   # Confirms the built package loads and works when installed, rather than only
   # from a workspace checkout.

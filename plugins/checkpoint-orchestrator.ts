@@ -29,7 +29,7 @@ import {
 } from "./core/util.js"
 
 export const PLUGIN_ID = "gitdamnit.checkpoint-orchestrator"
-export const PLUGIN_VERSION = "2.0.0-dev.1"
+export const PLUGIN_VERSION = "2.0.0-dev.2"
 
 // Namespaced default: a co-installed plugin sharing .opencode/ must never see
 // our files, and we must never write into a directory we do not own.

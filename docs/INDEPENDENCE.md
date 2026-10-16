@@ -130,6 +130,26 @@ be speculative.
 `checkpoints.db`: SQLite's WAL means a naive file copy can be inconsistent, and
 the database is this plugin's private storage.
 
+### Backup interoperability with Git That Shit
+
+Git That Shit deliberately excludes live `.sqlite`, `.db`, `-wal` and `-shm`
+files, so it will never commit this plugin's database and this plugin must not
+depend on it for durability. The supported interface already exists and needs no
+new code:
+
+1. **Off-machine state**: the versioned `handoff-<sessionId>.md` export, or
+   `checkpoint_load` / `checkpoint_list` through the tool API.
+2. **Whole-database copy**: `DatabaseSync.backup()` (Node ≥ 22.13) or a copy taken
+   while OpenCode is stopped. This is documented for users in
+   [MIGRATION.md](MIGRATION.md#6-backing-up-and-recovering-the-database).
+
+A `checkpoint_backup` tool that shells out to a configured Git That Shit
+command would add a mandatory cross-plugin dependency for no capability this
+plugin does not already offer, so it is deliberately not implemented. If a future
+release wants one-command export, the smallest useful shape is a tool that writes
+a `DatabaseSync.backup()` file to a caller-supplied path and returns it — no
+knowledge of the consumer, no coupling.
+
 ## 8. Concurrency and session isolation
 
 * Every checkpoint, snapshot, counter and dedup hash is scoped by session id.
@@ -169,39 +189,38 @@ that registers its own tools, hooks and storage in the same host:
 
 ## 10. Integration matrix
 
-Only the "alone" rows can be verified here: **Git That Shit and Stranger Danger
-are not available in this development environment, so nothing in this repository
-claims to have tested them.** The stand-in above exercises the same host
-contracts they use.
+The sibling plugins were not importable from this repository, so the full matrix
+was executed in the separate **Docker Plugin Test Lab** (rootless, disposable
+project, offline mock provider) rather than in this checkout. That lab run is
+against commit `bedc14b` (`2.0.0-dev.1`) of this plugin; the hardening in
+`2.0.0-dev.2` changes storage internals only and does not alter the tool surface
+or the hook contract the matrix exercises.
 
-| Configuration | Expected | Status here |
+| Configuration | Expected | Status |
 |---|---|---|
-| Checkpoint Orchestrator alone | Fully functional | **Verified** |
-| A foreign plugin stand-in + this plugin | Both functional | **Verified**, both orders |
-| Stranger Danger + Checkpoint Orchestrator | Both functional | Not testable here |
-| Git That Shit + Checkpoint Orchestrator | Both functional | Not testable here |
-| All three plugins | All functional | Not testable here |
+| Checkpoint Orchestrator alone | Fully functional | **Verified** (lab: 145/145 checks, all 8 tools registered) |
+| A foreign plugin stand-in + this plugin | Both functional | **Verified** here, both orders |
+| Stranger Danger + Checkpoint Orchestrator | Both functional | **Verified** in the lab (`sd_cp_gts` order and others) |
+| Git That Shit + Checkpoint Orchestrator | Both functional | **Verified** in the lab (`gts_cp_sd` and others) |
+| All three plugins | All functional | **Verified** in the lab: all 6 load orders + a duplicate registration |
 
-Why the sibling rows could not be executed in this environment, recorded from a
-read-only inspection of the sibling checkouts (their repositories were not
-modified):
+The lab also ran failure-isolation configurations (a companion failing first,
+mid-order, and last) and confirmed the other plugins' tools and this one's remain
+independently registered, with no errors. Evidence recorded by the lab (not
+modified by this repository): `reports/rc-verification.md`,
+`reports/runtime-all.json`, `reports/matrix-*.json`,
+`reports/failure-isolation-*.json`.
 
-* `@gitdamnit/opencode-git-that-shit` 0.2.0 depends on `@opencode-ai/plugin`
-  `^1.14.48` — the V1 SDK.
-* `@gitdamnit/stranger-danger` 0.1.0 declares a peer dependency on
-  `@opencode-ai/plugin` `>=1.0.0` — also V1.
-
-V1 plugin implementations do not run in a V2 host, so a three-plugin V2 matrix
-cannot be run against those revisions as they stand. Neither checkout references
-`@gitdamnit/checkpoint-orchestrator` in any dependency or source file, so there is
-no inbound coupling to account for either. This plugin is V2-only, so the lab
-should run the full matrix once the siblings ship V2 entry points.
+Why an in-repo run is not possible: the sibling checkouts are not dependencies of
+this package, and the matrix needs all three installed into a host at once.
+Nothing in this plugin references them (dependency and source audit enforced by
+`tests/interop.test.js`), so there is no inbound coupling to account for.
 
 For the Docker Plugin Test Lab, this plugin needs no special support: install it
 by package name or from a local path, give it an isolated `databasePath` or
 `CHECKPOINT_ORCHESTRATOR_DB`, and use a disposable project directory. Assertions
 can be made against the tools, the SQLite file, and the handoff export.
-`docs/RUNTIME-VERIFICATION.md` records host behaviours the lab should account for
+`docs/RUNTIME-VERIFICATION.md` records host behaviours the lab must account for
 (asynchronous plugin activation, `OPENCODE_SESSION_ID` inheritance, and stdin
 handling) as well as what has already been verified against a real runtime.
 
@@ -220,6 +239,6 @@ handling) as well as what has already been verified against a real runtime.
 ## 12. Supported OpenCode versions
 
 OpenCode V2 with the `@opencode/plugin` v2 API, pinned to `2.0.21` and verified
-against runtime `opencode 2.0.21` (Bun 1.4.2). Node ≥ 22.5 is required for the
-tests and tooling because `node:sqlite` is used. V1 is intentionally not
-supported; see `docs/COMPATIBILITY.md`.
+against runtime `opencode 2.0.21` (Bun 1.4.2). Node ≥ 22.13 is required for the
+tests and tooling because `node:sqlite` is only unflagged from 22.13.0 / 23.4.0.
+V1 is intentionally not supported; see `docs/COMPATIBILITY.md`.

@@ -187,7 +187,13 @@ export function importLegacyState(store, options) {
         projectDirectory: options.projectDirectory,
         title: "Legacy project-level checkpoint (imported)",
     };
-    store.transaction(() => {
+    const imported = store.transaction(() => {
+        // Re-check inside the write transaction. The fast-path check above happens
+        // before the write lock, so two processes starting at the same instant both
+        // pass it; only the one that commits first may import, and the other must
+        // not duplicate the snapshots.
+        if (store.hasMigration(ledgerId))
+            return false;
         store.ensureSession(ref);
         if (state.checkpoint) {
             store.saveCheckpoint({
@@ -228,7 +234,11 @@ export function importLegacyState(store, options) {
             backedUp,
             warnings: [...state.unreadable, ...foreignWarnings],
         });
+        return true;
     });
+    if (!imported) {
+        return { imported: false, reason: "already-imported", snapshotCount: 0, backedUp: [], warnings: [] };
+    }
     return {
         imported: true,
         reason: "imported",

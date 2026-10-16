@@ -10,10 +10,10 @@
 | Config key | `plugin` | `plugins` |
 | Storage | `.opencode/state/*.json` (project-level) | `checkpoints.db` (SQLite, session-scoped) |
 | Session isolation | no — one shared checkpoint per project | yes |
-| Handoff file | `.opencode/state/handoff.md` | `.opencode/state/handoff-<sessionId>.md` |
+| Handoff file | `.opencode/state/handoff.md` | `.opencode/state/checkpoint-orchestrator/handoff-<sessionId>.md` |
 | Tools | 7 | 7 preserved + `checkpoint_migrate` |
 | Test suite | duplicated logic, no production imports | drives `dist/` and the real V2 entry |
-| Node runtime for tests | 18 / 20 / 22 | 22 / 24 |
+| Node runtime for tests | 18 / 20 / 22 | 22 / 24 (≥ 22.13 required) |
 
 ## V1 status: intentionally dropped
 
@@ -55,7 +55,7 @@ contracts.
 | Runtime | Supported | Notes |
 |---|---|---|
 | OpenCode's bundled Bun | ≥ 1.4 | `node:sqlite` is available from Bun 1.4; verified on 1.4.2 |
-| Node.js | ≥ 22.5 | `node:sqlite` is built in. On Node 22.5–22.12 it needs `--experimental-sqlite`; verified without a flag on 22.23.2 |
+| Node.js | ≥ 22.13 | `node:sqlite` is built in and unflagged from 22.13.0 / 23.4.0. On 22.5–22.12 and 23.0–23.3 it needs `--experimental-sqlite`, so those versions are **not** supported. Verified without a flag on 22.23.2 |
 | Bun (standalone) | ≥ 1.4 | verified on 1.3.14 / 1.4.2 for `bun:sqlite`; `node:sqlite` requires ≥ 1.4 |
 | Deno | no | `node:sqlite` is not provided |
 

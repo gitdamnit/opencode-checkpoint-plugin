@@ -1,14 +1,15 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
-import { mkdtempSync, rmSync, statSync, existsSync, readFileSync, writeFileSync } from "node:fs"
+import { execFileSync, spawn } from "node:child_process"
+import { mkdirSync, mkdtempSync, rmSync, statSync, existsSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { CheckpointStore } from "../dist/core/store.js"
-import { LATEST_SCHEMA_VERSION } from "../dist/core/schema.js"
+import { LATEST_SCHEMA_VERSION, MIGRATIONS } from "../dist/core/schema.js"
+import { DB_SCHEMA_VERSION } from "../dist/core/types.js"
 import { deepMerge } from "../dist/core/util.js"
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -17,6 +18,23 @@ const fixtures = join(here, "fixtures")
 function scratch() {
   const dir = mkdtempSync(join(tmpdir(), "co-store-"))
   return { dir, dbPath: join(dir, "checkpoints.db") }
+}
+
+/** Run several child processes at the same time and collect their results. */
+function runParallel(commands) {
+  return Promise.all(
+    commands.map(
+      (args) =>
+        new Promise((resolve) => {
+          const child = spawn(process.execPath, args, { stdio: ["ignore", "pipe", "pipe"] })
+          let stdout = ""
+          let stderr = ""
+          child.stdout.on("data", (chunk) => (stdout += chunk))
+          child.stderr.on("data", (chunk) => (stderr += chunk))
+          child.on("close", (code) => resolve({ code, stdout, stderr }))
+        }),
+    ),
+  )
 }
 
 function session(id, project = "proj-1") {
@@ -483,9 +501,154 @@ test("a malformed session id fails loudly instead of silently matching nothing",
   }
 })
 
+test("the declared schema version and the migration list cannot drift", () => {
+  assert.equal(DB_SCHEMA_VERSION, LATEST_SCHEMA_VERSION)
+  assert.deepEqual(
+    MIGRATIONS.map((migration) => migration.version),
+    [...MIGRATIONS].map((migration) => migration.version).sort((a, b) => a - b),
+    "migrations must be declared in ascending order",
+  )
+})
+
+test("two project ids may share one directory without making storage unusable", () => {
+  const { dir, dbPath } = scratch()
+  try {
+    const store = new CheckpointStore(dbPath)
+    // A host can report a different project id for the same canonical
+    // directory — a checkout plus a worktree of it, or a repository that moved.
+    // That must not become a hard `UNIQUE constraint failed: projects.directory`
+    // on every write path.
+    store.ensureSession({ sessionID: "ses_first", projectID: "proj-a", projectDirectory: "/repo" })
+    store.ensureSession({ sessionID: "ses_second", projectID: "proj-b", projectDirectory: "/repo" })
+    store.saveCheckpoint({ sessionID: "ses_second", projectID: "proj-b", data: data("second") })
+
+    assert.equal(store.loadCheckpoint("ses_second").data.task.title, "second")
+    assert.equal(store.getSession("ses_second").projectID, "proj-b")
+    store.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("a write path never overwrites the authoritative project directory", () => {
+  const { dir, dbPath } = scratch()
+  try {
+    const store = new CheckpointStore(dbPath)
+    store.ensureProject("proj-1", "/repo")
+
+    // Bypass ensureSession so the store knows the project id but not its
+    // directory. The placeholder must not replace the real value.
+    store.addSnapshot({
+      sessionID: "ses_late",
+      projectID: "proj-1",
+      name: "auto-late",
+      kind: "auto",
+      data: data("late"),
+    })
+
+    const raw = new DatabaseSync(dbPath)
+    const row = raw.prepare("SELECT directory, canonical FROM projects WHERE id = ?").get("proj-1")
+    raw.close()
+    assert.equal(row.directory, "/repo", "the real directory must survive a write path that only knows the project id")
+    store.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("an older schema is migrated in place without losing rows", () => {
+  const { dir, dbPath } = scratch()
+  try {
+    // Build a v1 database exactly as the previous build left it.
+    const raw = new DatabaseSync(dbPath)
+    for (const statement of MIGRATIONS[0].statements) raw.exec(statement)
+    raw.exec("PRAGMA user_version = 1")
+    raw.prepare("INSERT INTO projects (id,directory,created_at,updated_at) VALUES (?,?,?,?)").run("proj-1", "/repo", "t", "t")
+    raw.prepare("INSERT INTO sessions (id,project_id,created_at,updated_at) VALUES (?,?,?,?)").run("ses_old", "proj-1", "t", "t")
+    raw.prepare(
+      "INSERT INTO checkpoints (session_id,project_id,title,schema_version,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+    ).run("ses_old", "proj-1", "pre-existing", 3, "t", "t")
+    raw.close()
+
+    const store = new CheckpointStore(dbPath)
+    assert.equal(store.schemaVersion, LATEST_SCHEMA_VERSION)
+    assert.equal(store.loadCheckpoint("ses_old").data.task.title, "pre-existing")
+    assert.equal(store.integrityCheck(), "ok")
+    // The v2 migration relaxes the directory constraint on the migrated database.
+    store.ensureProject("proj-2", "/repo")
+    assert.equal(store.foreignKeyCheck(), 0)
+    store.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("a brand-new database opened by several processes at once migrates once", async () => {
+  const { dir, dbPath } = scratch()
+  try {
+    // Nothing is seeded: every child races through schema creation on the empty
+    // file, which is where the migration race used to fail.
+    const results = await runParallel(
+      Array.from({ length: 6 }, () => [join(fixtures, "schema-open.mjs"), dbPath]),
+    )
+    for (const result of results) {
+      assert.equal(result.code, 0, `child failed to open and migrate: ${result.stderr}`)
+      assert.equal(Number(result.stdout.trim()), LATEST_SCHEMA_VERSION)
+    }
+
+    const store = new CheckpointStore(dbPath)
+    assert.equal(store.integrityCheck(), "ok")
+    assert.equal(store.schemaVersion, LATEST_SCHEMA_VERSION)
+    store.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("concurrent legacy imports across processes import exactly once", async () => {
+  const { dir, dbPath } = scratch()
+  const projectDir = join(dir, "project")
+  const stateDir = join(projectDir, ".opencode", "state")
+  try {
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(
+      join(stateDir, "checkpoint.json"),
+      JSON.stringify({ version: 2, updatedAt: "2026-01-01T00:00:00.000Z", task: { title: "legacy" }, nextSteps: ["x"] }),
+    )
+    writeFileSync(
+      join(stateDir, "checkpoint-history.json"),
+      JSON.stringify({
+        snapshots: [
+          { name: "snap-1", savedAt: "2026-01-02T00:00:00.000Z", data: { version: 2, updatedAt: "2026-01-02T00:00:00.000Z", task: { title: "snap" } } },
+        ],
+      }),
+    )
+
+    const results = await runParallel(
+      Array.from({ length: 6 }, () => [join(fixtures, "importer.mjs"), dbPath, projectDir, "proj-1"]),
+    )
+    for (const result of results) {
+      assert.equal(result.code, 0, `importer failed: ${result.stderr}`)
+    }
+    const imported = results
+      .map((result) => JSON.parse(result.stdout.trim()))
+      .filter((result) => result.imported === true)
+    assert.equal(imported.length, 1, "exactly one process must perform the import")
+
+    const store = new CheckpointStore(dbPath)
+    // The live import plus the one history snapshot: no duplicates.
+    assert.equal(store.countSnapshots("legacy::proj-1"), 2)
+    store.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test("writeFileSync import is exercised so fixture directories stay relative", () => {
   // Guards against fixtures being moved without updating this suite.
   assert.ok(existsSync(join(fixtures, "writer.mjs")))
   assert.ok(existsSync(join(fixtures, "crash.mjs")))
+  assert.ok(existsSync(join(fixtures, "importer.mjs")))
+  assert.ok(existsSync(join(fixtures, "schema-open.mjs")))
   writeFileSync(join(tmpdir(), "co-store-touch"), "ok")
 })

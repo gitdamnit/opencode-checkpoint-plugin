@@ -80,8 +80,14 @@ migrations(id PK, project_id, applied_at, details)
 * Snapshot `payload` is a frozen JSON copy of the checkpoint at capture time.
 * `synthesized` distinguishes real saved state from a placeholder created when
   compaction happens with nothing saved.
+* `checkpoints` and `snapshots` carry a composite foreign key to
+  `sessions(id, project_id)`, so a row cannot claim a project its session does not
+  belong to.
 * `PRAGMA user_version` tracks the schema. Migrations are forward-only, run in a
   transaction, and an unknown *future* version is refused rather than used.
+  Migration 2 replaces `UNIQUE(projects.directory)` with a plain index: project
+  identity is the id, and a host may report two ids for one canonical directory
+  (a checkout plus a worktree of it, or a moved repository).
 
 ## Invariants
 
@@ -119,11 +125,16 @@ migrations(id PK, project_id, applied_at, details)
   matters: measured here, one `fsync` costs roughly 0.7–1.5 s, so `FULL` would
   make every save visibly slow.
 * `busy_timeout = 5000` plus a small retry loop around `BEGIN IMMEDIATE` handles
-  a competing writer or checkpoint.
+  a competing writer or checkpoint. The first schema creation is itself one
+  `BEGIN IMMEDIATE` transaction that re-reads `PRAGMA user_version` after taking
+  the lock, because several processes can open a brand-new database at the same
+  instant and all observe version 0 before any of them commits.
 * Crash safety is not assumed: `tests/store.test.js` `SIGKILL`s a child process
   in the middle of an open transaction and asserts that the committed write
   survived, the uncommitted one did not, and `integrity_check` still reports
-  `ok`. Multi-process access is exercised with four concurrent writer processes.
+  `ok`. Multi-process access is exercised with four concurrent writer processes,
+  six concurrent first-opens of one new database, and six concurrent legacy
+  imports.
 
 ## Measured cost (this machine, ext4)
 

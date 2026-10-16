@@ -99,7 +99,42 @@ database is never deleted by an upgrade.
 
 * `~/.local/share/opencode/checkpoint-orchestrator/checkpoints.db` (Linux),
   directory `0700`, file `0600`.
-* `.opencode/state/handoff-<sessionId>.md` per session, regenerable at any time.
+* `.opencode/state/checkpoint-orchestrator/handoff-<sessionId>.md` per session,
+  regenerable at any time. Legacy backups land beside them in
+  `.opencode/state/checkpoint-orchestrator/legacy-backup/`.
 
 If you want the database somewhere else, set `databasePath` or
 `CHECKPOINT_ORCHESTRATOR_DB`.
+
+## 6. Backing up and recovering the database
+
+The SQLite database is the authoritative store, and unlike the old JSON files it
+has sidecar `-wal` and `-shm` files while in use. Do not copy `checkpoints.db`
+alone from a running OpenCode; take a consistent copy with SQLite's own backup
+API, or copy all three files while OpenCode is stopped.
+
+```bash
+node -e '
+  const { DatabaseSync } = require("node:sqlite")
+  const p = process.env.CHECKPOINT_ORCHESTRATOR_DB ||
+    process.env.HOME + "/.local/share/opencode/checkpoint-orchestrator/checkpoints.db"
+  const src = new DatabaseSync(p)
+  src.backup(p + ".backup").then(() => { src.close(); console.log("backup written") })
+'
+```
+
+Recovery ladder:
+
+1. **Per session, in place** — `checkpoint_list`, then
+   `checkpoint_restore_snapshot`. Restoring captures the current state as a
+   `pre-restore-<timestamp>` snapshot first, and that undo point is never pruned.
+2. **Whole database** — stop OpenCode, replace `checkpoints.db` (and remove any
+   stale `-wal`/`-shm`) with a backup.
+3. **Damage** — `PRAGMA integrity_check` and `PRAGMA foreign_key_check` report
+   corruption. The plugin only logs the outcome; it never rewrites the file.
+
+A `user_version` newer than the running build is refused rather than used, so an
+older build cannot silently downgrade a newer database.
+
+The migration itself never deletes legacy JSON, so the pre-2.0 files remain the
+last-resort source of truth for anything that was never imported.
