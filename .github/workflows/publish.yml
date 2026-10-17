@@ -1,22 +1,12 @@
+# Manual release publishing using npm Trusted Publishing (OIDC).
+# Never triggered by a GitHub release or tag push.
 name: Publish to npm
 
-# Carried over from the local working tree of the 1.0.x line, where it ran on
-# `release: published`.
-#
-# It is now MANUAL ONLY, on purpose. Publishing a GitHub release must never
-# publish to npm as a side effect: the 2.0.0 release is created with npm
-# publication deliberately withheld pending explicit maintainer approval, and an
-# automatic trigger would make that impossible to guarantee.
-#
-# To publish after approval, run this workflow from the Actions tab (or
-# `gh workflow run publish.yml -f tag=v2.0.0`) and pass the released tag. The
-# workflow checks that tag out and refuses to publish unless it matches
-# package.json.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Released git tag to publish, e.g. v2.0.0 (must match package.json version)"
+        description: "Existing release tag (for example v0.3.0)"
         required: true
         type: string
 
@@ -28,38 +18,51 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout the requested tag
+      - name: Validate input and checkout tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          if ! printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Expected a stable release tag such as v1.2.3" >&2
+            exit 1
+          fi
+      - name: Checkout release tag
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag }}
+          persist-credentials: false
 
-      - name: Setup Node
+      - name: Set up Node for npm Trusted Publishing
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '24'
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Require current npm OIDC client
+        run: npm install --global 'npm@^11.5.1'
+
+      - name: Verify version and tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          actual="$(node -p "require('./package.json').version")"
+          test "$RELEASE_TAG" = "v$actual" || {
+            echo "Version mismatch: $RELEASE_TAG vs $actual" >&2
+            exit 1
+          }
+          echo "Verified release $RELEASE_TAG"
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Verify the requested tag matches package.json
-        run: |
-          set -eu
-          tag="${{ inputs.tag }}"
-          pkg_version="$(node -p "require('./package.json').version")"
-          tag_version="${tag#v}"
-          if [ "$tag_version" != "$pkg_version" ]; then
-            echo "Requested tag ($tag) does not match package.json ($pkg_version)" >&2
-            exit 1
-          fi
-          echo "Publishing $pkg_version from tag $tag"
-
-      - name: Lint, typecheck, build, test
+      - name: Lint, typecheck, build and test
         run: |
           npm run lint
           npm run typecheck
           npm run build
           npm test
 
-      - name: Publish
+      - name: Publish using OIDC
         run: npm publish --access public
