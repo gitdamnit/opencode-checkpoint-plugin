@@ -1,6 +1,6 @@
 {
   "name": "@gitdamnit/checkpoint-orchestrator",
-  "version": "2.0.0-dev.2",
+  "version": "2.0.0",
   "description": "Failure-resilient, session-isolated checkpointing for OpenCode — SQLite-backed task state and resumable AI workflows",
   "repository": {
     "type": "git",

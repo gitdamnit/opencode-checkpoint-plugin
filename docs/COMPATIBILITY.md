@@ -2,7 +2,7 @@
 
 ## Matrix
 
-| | 1.0.1 (published) | 2.0.0-dev (this branch) |
+| | 1.0.1 | 2.0.0 |
 |---|---|---|
 | OpenCode V1 | yes | **no** |
 | OpenCode V2 | no | yes (verified against `opencode` 2.0.21) |
@@ -45,10 +45,14 @@ owns its storage, and requires no particular hook or load order. Details,
 including the integration test matrix and behaviour when a companion plugin is
 absent or failing, are in [INDEPENDENCE.md](INDEPENDENCE.md).
 
-Git That Shit and Stranger Danger were not available in this development
-environment, so this repository makes **no claim** to have been tested against
-them. Co-existence is verified against a stand-in plugin that uses the same host
-contracts.
+The sibling plugins are not dependencies of this package and are not importable
+from this repository, so co-existence is verified in two independent ways:
+`tests/interop.test.js` runs against a stand-in plugin that uses the same host
+contracts, and the separate **Docker Plugin Test Lab** ran all three plugins
+together — every load order plus a duplicate entry — at commits `65bf698`
+(this plugin) / `6069f91` / `9cfd813`, with all eight of this plugin's tools
+registered in each configuration (145 passed, 0 failed). See
+[INDEPENDENCE.md](INDEPENDENCE.md) §10 for the matrix.
 
 ## Runtime compatibility
 

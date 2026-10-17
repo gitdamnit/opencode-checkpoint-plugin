@@ -1,10 +1,24 @@
 name: Publish to npm
 
-# Carried over from the local working tree of the 1.0.x line. It only runs when a
-# GitHub release is published, so it is inert until someone publishes one.
+# Carried over from the local working tree of the 1.0.x line, where it ran on
+# `release: published`.
+#
+# It is now MANUAL ONLY, on purpose. Publishing a GitHub release must never
+# publish to npm as a side effect: the 2.0.0 release is created with npm
+# publication deliberately withheld pending explicit maintainer approval, and an
+# automatic trigger would make that impossible to guarantee.
+#
+# To publish after approval, run this workflow from the Actions tab (or
+# `gh workflow run publish.yml -f tag=v2.0.0`) and pass the released tag. The
+# workflow checks that tag out and refuses to publish unless it matches
+# package.json.
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Released git tag to publish, e.g. v2.0.0 (must match package.json version)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -14,8 +28,10 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout the requested tag
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -26,16 +42,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify the release tag matches package.json
+      - name: Verify the requested tag matches package.json
         run: |
           set -eu
-          tag="${{ github.event.release.tag_name }}"
+          tag="${{ inputs.tag }}"
           pkg_version="$(node -p "require('./package.json').version")"
           tag_version="${tag#v}"
           if [ "$tag_version" != "$pkg_version" ]; then
-            echo "Release tag ($tag) does not match package.json ($pkg_version)" >&2
+            echo "Requested tag ($tag) does not match package.json ($pkg_version)" >&2
             exit 1
           fi
+          echo "Publishing $pkg_version from tag $tag"
 
       - name: Lint, typecheck, build, test
         run: |

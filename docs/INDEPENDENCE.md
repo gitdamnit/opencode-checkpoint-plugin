@@ -192,9 +192,10 @@ that registers its own tools, hooks and storage in the same host:
 The sibling plugins were not importable from this repository, so the full matrix
 was executed in the separate **Docker Plugin Test Lab** (rootless, disposable
 project, offline mock provider) rather than in this checkout. That lab run is
-against commit `bedc14b` (`2.0.0-dev.1`) of this plugin; the hardening in
-`2.0.0-dev.2` changes storage internals only and does not alter the tool surface
-or the hook contract the matrix exercises.
+against the released commit `65bf698` (`2.0.0`) of this plugin, together with
+Git That Shit `6069f91` and Stranger Danger `9cfd813`: **145 passed, 0 failed, 0
+skipped** on `opencode` v2.0.21 / Node v22.23.3, with all eight of this plugin's
+tools registered in every configuration.
 
 | Configuration | Expected | Status |
 |---|---|---|
