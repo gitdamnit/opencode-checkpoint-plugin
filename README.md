@@ -8,11 +8,12 @@ Failure-resilient, **session-isolated** checkpointing for OpenCode. Task state i
 persisted in SQLite so the next model, provider, or session can pick up exactly
 where the last one left off.
 
-> **Status: v2.0.0 development line.** This is a breaking release: storage moved
-> from project-level JSON to a SQLite database, the plugin API moved from
+> **Status: v2.0.0.** This is a breaking release: storage moved from
+> project-level JSON to a SQLite database, the plugin API moved from
 > `@opencode-ai/plugin` (V1) to `@opencode/plugin` (V2), and checkpoints are now
-> scoped to a session. The published `1.0.1` release is unaffected. See
-> [docs/MIGRATION.md](docs/MIGRATION.md) for the upgrade path.
+> scoped to a session. The `1.0.1` release line is unaffected and remains
+> installable. See [docs/MIGRATION.md](docs/MIGRATION.md) for the upgrade path and
+> [docs/releases/v2.0.0.md](docs/releases/v2.0.0.md) for the release record.
 
 ## Why
 
@@ -74,6 +75,21 @@ With options:
 ```
 
 Local development checkouts are loaded from `.opencode/plugins/`.
+
+### Uninstall
+
+Remove the entry from `plugins` in your OpenCode configuration and restart. Your
+stored state is never deleted automatically, so it survives a removal and is
+reused if you reinstall:
+
+```bash
+npm uninstall @gitdamnit/checkpoint-orchestrator
+```
+
+To delete the stored state as well, remove the database directory *including its
+`-wal` and `-shm` files* — see [Storage](#storage) for the per-platform path.
+For a local development checkout, also delete the
+`.opencode/plugins/checkpoint-orchestrator.js` link.
 
 ## Tools
 
@@ -292,10 +308,11 @@ plugin loading.
 * Independence guarantees, the test matrix, and behaviour with companion plugins
   absent or failing are documented in
   [docs/INDEPENDENCE.md](docs/INDEPENDENCE.md). A Docker Plugin Test Lab run
-  against this development line registered all eight checkpoint tools alone, with
-  each sibling plugin, and with all three installed together, in every load
-  order; see [docs/RUNTIME-VERIFICATION.md](docs/RUNTIME-VERIFICATION.md) for the
-  exact commit that was measured.
+  against commit `65bf698` registered all eight checkpoint tools alone, with each
+  sibling plugin, and with all three installed together in every load order
+  (145 passed / 0 failed / 0 skipped); see
+  [docs/RUNTIME-VERIFICATION.md](docs/RUNTIME-VERIFICATION.md) for the exact
+  commit and runtime that was measured.
 
 ## License
 

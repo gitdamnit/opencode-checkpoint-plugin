@@ -1,5 +1,61 @@
 # Changelog
 
+## [2.0.0] — 2026-10-16
+
+First stable release of the 2.0 line. It consolidates the four development
+prereleases (`2.0.0-dev.0` … `2.0.0-dev.2`, below) without further code change:
+the release commit is the qualified release candidate, and only version metadata,
+release documentation and the publish workflow changed after it.
+
+### Breaking changes
+- **Storage moved from project-level JSON to SQLite and is now session-scoped.**
+  Checkpoints, snapshots, counters and dedup hashes are keyed by session id, so
+  two sessions in one project can no longer overwrite or inherit each other's
+  state. There is no in-place upgrade of the old file: legacy JSON is imported
+  into a `legacy::<projectID>` namespace and adopted into a session only on
+  explicit request (`checkpoint_migrate`).
+- **Plugin API moved from `@opencode-ai/plugin` (V1) to `@opencode/plugin`
+  (2.0.21) and requires OpenCode V2.** V1 is intentionally not supported; see
+  [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md). The `1.0.1` release line is
+  unaffected and remains installable.
+- **The configuration key changed from `plugin` to `plugins`.**
+- **Derived handoff exports and migration backups moved into this plugin's own
+  namespace** (`.opencode/state/checkpoint-orchestrator/`).
+- **`engines.node` is `>=22.13.0`.** `node:sqlite` is only available without
+  `--experimental-sqlite` from Node 22.13.0 / 23.4.0.
+
+### Tools
+Eight tools: the seven V1 tools (`checkpoint_save`, `checkpoint_load`,
+`checkpoint_status`, `checkpoint_clear`, `checkpoint_list`,
+`checkpoint_load_snapshot`, `checkpoint_restore_snapshot`) plus
+`checkpoint_migrate`.
+
+### Verified
+- **Docker Plugin Test Lab: 145 passed, 0 failed, 0 skipped** against
+  `opencode` v2.0.21 / Node v22.23.3, at commit `65bf698` of this branch, with
+  Git That Shit `6069f91` and Stranger Danger `9cfd813`, all three plugins
+  installed together in all six load orders plus a duplicate entry. This plugin's
+  eight tools registered in every configuration.
+- **120 source-level tests** (`npm test`) drive the built `dist/` output and the
+  real V2 entry point.
+- 979 historical V1 conformance assertions (`npm run test:legacy`) are kept as a
+  V1 behaviour reference; they re-implement the old logic and are **not**
+  coverage of this code.
+
+### Known limitations
+- `node:sqlite` is still marked experimental in Node and prints a warning under
+  plain Node; it is unflagged from Node 22.13.0 / 23.4.0, and Bun (the runtime
+  OpenCode uses) does not warn.
+- Checkpoints belong to their own session; they are never shared implicitly.
+- Legacy migration never injects old data into an active session.
+- A compaction after `checkpoint_clear` records a clearly marked synthesized
+  placeholder, which is never injected into the summary.
+- The `prompt` hook is not an exactly-once event ledger.
+- Project identity and directory mapping have documented edge cases.
+
+The full list is in [README.md](README.md#known-limitations), and the immutable
+release record is in [docs/releases/v2.0.0.md](docs/releases/v2.0.0.md).
+
 ## [2.0.0-dev.2] — 2026-10-15
 
 Persistence-integrity hardening found by the final SQLite audit. No tool-surface

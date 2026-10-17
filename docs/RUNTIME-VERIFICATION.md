@@ -20,23 +20,22 @@ was checked in *that* runtime rather than only in Node.
 ## Docker Plugin Test Lab
 
 The separate lab ran this plugin, staged → packed → installed from commit
-`bedc14b` (`2.0.0-dev.1`, clean worktree), in rootless Docker with a disposable
-project and an offline mock provider. Result: **145/145** lab checks across
-runtime loading (5 configs), functional tests, the model-request path,
+`65bf698` (`2.0.0`, clean worktree), in rootless Docker with a disposable
+project and an offline mock provider, together with Git That Shit `6069f91`
+(`0.3.0`) and Stranger Danger `9cfd813` (`0.2.0`). Result: **145/145** lab checks
+— 0 failed, 0 skipped — across runtime loading (5 configs: baseline, each plugin
+alone, and all three together), functional tests, the model-request path,
 combined-compatibility, the 6-load-order matrix plus a duplicate, security,
 concurrency/crash consistency, failure isolation, and the live automatic-trigger
-suites. All eight tools registered alone, with either sibling, and with all three
-installed together. Its own copy of this repository's suites also ran inside the
-image: **83/83** (`isolation` + `legacy` = 29; `store` + `service` + `unit` = 54).
-`plugin.test.js` and `interop.test.js` were not run there because they resolve
-`@opencode/plugin` from a full workspace; the lab's runtime/matrix/trigger suites
-cover their subject matter, and both run in this repository (30 tests).
+suites. All eight tools registered alone, with either sibling, and with both, in
+every configuration. The measured runtime was `opencode` v2.0.21 on Node
+v22.23.3; the lab image was `opencode-plugin-lab:local`, id
+`sha256:76ebd805cd548a638b9b1508e5f16e680cd5b082cd3f3561d28f2f2301336ff1`.
 
 The lab's reports were not modified by this repository; see the lab's
-`reports/rc-verification.md` and `reports/rc-upstream-tests.md`. The hardening in
-`2.0.0-dev.2` changes storage internals only (migration, project identity,
-first-open and legacy-import concurrency), which the matrix and tool-registration
-checks do not exercise.
+`reports/rc-evidence.{json,md}` and `reports/test-report.{json,md}` for the
+per-plugin source/staged/packed/installed commit and version comparison and the
+full per-check breakdown.
 
 ## What was checked, and how
 
@@ -48,11 +47,13 @@ checks do not exercise.
 PASS  npm pack produces a tarball
 PASS  tarball ships the built entry point   (package/dist/checkpoint-orchestrator.js)
 PASS  tarball contains no database, node_modules or tests
-PASS  installed package version 2.0.0-dev.1
+PASS  installed package version matches the checkout — 2.0.0
 ```
 
 The tarball was installed into a clean throwaway project, so the artifact under
-test is the published shape, not a workspace checkout.
+test is the published shape, not a workspace checkout. This was re-run at the
+release commit (`npm run test:opencode`, `opencode` v2.0.21): **22/22 integration
+checks passed** (1 advisory).
 
 ### 2. Driver conformance inside the real runtime
 
@@ -173,3 +174,13 @@ not of this plugin, but they affect how it is tested and installed.
 6. **`opencode serve` requires authentication** (it prints a `server password` on
    startup). The bearer/`x-opencode-password`/Basic variants tried here were all
    rejected, so the automated test drives the CLI rather than the HTTP API.
+
+7. **Three integration checks assert on the model's printed output, not on the
+   database.** `checkpoint_status reported the checkpoint` and the two
+   persistence-across-process checks match `"exists": true` and the checkpoint
+   title in the CLI's stdout. A model that answers conversationally instead of
+   echoing the raw tool JSON fails them with no storage defect present. At the
+   release commit this was observed once as 19/22 and twice as 22/22; every
+   database-level assertion (the row, its fields, the named snapshot, isolation,
+   `integrity_check`) passed in all three runs. Re-run before treating those
+   three as failures.
