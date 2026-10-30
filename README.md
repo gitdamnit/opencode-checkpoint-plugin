@@ -3,6 +3,8 @@
 # @gitdamnit/checkpoint-orchestrator
 
 [![CI](https://github.com/gitdamnit/opencode-checkpoint-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/gitdamnit/opencode-checkpoint-plugin/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@gitdamnit/checkpoint-orchestrator.svg)](https://www.npmjs.com/package/@gitdamnit/checkpoint-orchestrator)
+[![license](https://img.shields.io/npm/l/@gitdamnit/checkpoint-orchestrator.svg)](LICENSE)
 
 Failure-resilient, **session-isolated** checkpointing for OpenCode. Task state is
 persisted in SQLite so the next model, provider, or session can pick up exactly
